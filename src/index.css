@@ -1,0 +1,468 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Professional Design System for Consentra - Blue Flower Theme */
+
+@layer base {
+  :root {
+    /* Light mode colors - Professional blue palette inspired by the flower logo */
+    --background: 0 0% 100%;
+    --foreground: 216 15% 20%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 216 15% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 216 15% 20%;
+
+    --primary: 210 100% 56%; /* Blue from the flower logo */
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 210 40% 98%;
+    --secondary-foreground: 216 15% 20%;
+
+    --muted: 210 30% 96%;
+    --muted-foreground: 216 8% 50%;
+
+    --accent: 210 100% 95%;
+    --accent-foreground: 216 15% 20%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 210 30% 88%;
+    --input: 210 30% 88%;
+    --ring: 210 100% 56%;
+
+    --radius: 0.75rem;
+
+    /* Sidebar colors */
+    --sidebar-background: 210 40% 98%;
+    --sidebar-foreground: 216 15% 25%;
+    --sidebar-primary: 210 100% 56%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 210 30% 94%;
+    --sidebar-accent-foreground: 216 15% 20%;
+    --sidebar-border: 210 30% 85%;
+    --sidebar-ring: 210 100% 56%;
+
+    /* AI Agent specific colors */
+    --ai-agent-primary: 271 91% 65%;
+    --ai-agent-secondary: 271 22% 94%;
+    --ai-assistant-primary: 142 76% 36%;
+    --ai-assistant-secondary: 142 22% 94%;
+
+    /* Logo blue variations */
+    --logo-blue: 210 100% 56%;
+    --logo-blue-light: 210 100% 85%;
+    --logo-blue-dark: 210 100% 40%;
+  }
+
+  .dark {
+    /* Dark mode colors - Professional dark palette */
+    --background: 216 25% 8%;
+    --foreground: 210 20% 95%;
+
+    --card: 216 25% 10%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 216 25% 10%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 210 100% 60%;
+    --primary-foreground: 216 25% 8%;
+
+    --secondary: 216 16% 15%;
+    --secondary-foreground: 210 20% 85%;
+
+    --muted: 216 16% 15%;
+    --muted-foreground: 216 8% 65%;
+
+    --accent: 216 16% 18%;
+    --accent-foreground: 210 20% 85%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 20% 95%;
+
+    --border: 216 16% 18%;
+    --input: 216 16% 18%;
+    --ring: 210 100% 60%;
+
+    /* Dark sidebar colors */
+    --sidebar-background: 216 25% 6%;
+    --sidebar-foreground: 210 20% 90%;
+    --sidebar-primary: 210 100% 60%;
+    --sidebar-primary-foreground: 216 25% 8%;
+    --sidebar-accent: 216 16% 12%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 216 16% 15%;
+    --sidebar-ring: 210 100% 60%;
+
+    /* AI colors for dark mode */
+    --ai-agent-primary: 271 91% 65%;
+    --ai-agent-secondary: 271 16% 12%;
+    --ai-assistant-primary: 142 76% 50%;
+    --ai-assistant-secondary: 142 16% 12%;
+
+    /* Logo blue variations for dark mode */
+    --logo-blue: 210 100% 60%;
+    --logo-blue-light: 210 100% 75%;
+    --logo-blue-dark: 210 100% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* Professional glass morphism effects */
+  .glass {
+    @apply bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border border-white/20 dark:border-gray-800/20;
+  }
+
+  .glass-card {
+    @apply bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50;
+  }
+
+  /* Improved dark mode support for dropdowns and selects */
+  .dark [data-radix-select-content] {
+    @apply bg-popover border-border shadow-md;
+  }
+
+  .dark [data-radix-select-item] {
+    @apply text-popover-foreground;
+  }
+
+  .dark [data-radix-select-item]:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  /* Logo-inspired gradient backgrounds */
+  .gradient-bg {
+    background: linear-gradient(135deg, hsl(var(--logo-blue)) 0%, hsl(var(--logo-blue-dark)) 100%);
+  }
+
+  .flower-gradient {
+    background: linear-gradient(135deg, 
+      hsl(var(--logo-blue)) 0%, 
+      hsl(var(--logo-blue-light)) 50%, 
+      hsl(var(--logo-blue)) 100%);
+  }
+
+  .ai-agent-gradient {
+    background: linear-gradient(135deg, hsl(var(--ai-agent-primary)) 0%, hsl(var(--logo-blue)) 100%);
+  }
+
+  .ai-assistant-gradient {
+    background: linear-gradient(135deg, hsl(var(--ai-assistant-primary)) 0%, hsl(var(--logo-blue)) 100%);
+  }
+
+  /* Custom scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-gray-100 dark:bg-gray-800;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400 dark:bg-gray-500;
+  }
+
+  /* Dark mode form improvements */
+  .dark input,
+  .dark textarea,
+  .dark select {
+    @apply bg-input border-border text-foreground;
+  }
+
+  .dark input:focus,
+  .dark textarea:focus,
+  .dark select:focus {
+    @apply ring-ring border-ring;
+  }
+
+  /* Dark mode card improvements */
+  .dark .card {
+    @apply bg-card border-border;
+  }
+
+  /* Ensure visibility of all text in dark mode */
+  .dark .text-gray-500 {
+    @apply text-muted-foreground;
+  }
+
+  .dark .text-gray-600 {
+    @apply text-muted-foreground;
+  }
+
+  .dark .text-gray-700 {
+    @apply text-foreground;
+  }
+
+  .dark .bg-gray-50 {
+    @apply bg-muted;
+  }
+
+  .dark .bg-gray-100 {
+    @apply bg-muted;
+  }
+
+  .dark .border-gray-200 {
+    @apply border-border;
+  }
+
+  .dark .border-gray-300 {
+    @apply border-border;
+  }
+
+  /* Dark mode input and form visibility fixes */
+  .dark input[type="text"],
+  .dark input[type="email"],
+  .dark input[type="number"],
+  .dark input[type="url"],
+  .dark textarea {
+    @apply bg-input text-foreground border-border placeholder:text-muted-foreground;
+  }
+
+  .dark input[type="text"]:focus,
+  .dark input[type="email"]:focus,
+  .dark input[type="number"]:focus,
+  .dark input[type="url"]:focus,
+  .dark textarea:focus {
+    @apply ring-2 ring-ring border-ring;
+  }
+
+  /* Dark mode select visibility */
+  .dark select {
+    @apply bg-input text-foreground border-border;
+  }
+
+  .dark select:focus {
+    @apply ring-2 ring-ring border-ring;
+  }
+
+  /* Dark mode checkbox and radio visibility */
+  .dark input[type="checkbox"],
+  .dark input[type="radio"] {
+    @apply border-border bg-input;
+  }
+
+  /* Dark mode button visibility improvements */
+  .dark button {
+    @apply text-foreground;
+  }
+
+  /* Dark mode label visibility */
+  .dark label {
+    @apply text-foreground;
+  }
+
+  /* Dark mode placeholder text */
+  .dark ::placeholder {
+    @apply text-muted-foreground;
+  }
+
+  /* Dark mode disabled state */
+  .dark input:disabled,
+  .dark textarea:disabled,
+  .dark select:disabled {
+    @apply bg-muted text-muted-foreground border-border cursor-not-allowed;
+  }
+}
+
+@layer components {
+  /* Professional button variants inspired by the flower logo */
+  .btn-gradient {
+    @apply bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-primary-foreground;
+  }
+
+  .btn-flower {
+    background: linear-gradient(135deg, hsl(var(--logo-blue)) 0%, hsl(var(--logo-blue-dark)) 100%);
+    @apply text-white hover:shadow-lg hover:shadow-primary/25 transition-all duration-300;
+  }
+
+  .btn-ai-agent {
+    @apply bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white;
+  }
+
+  .btn-ai-assistant {
+    @apply bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white;
+  }
+
+  /* Professional card styles */
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1;
+  }
+
+  .card-glow {
+    @apply shadow-lg shadow-primary/20 border-primary/20;
+  }
+
+  .card-flower {
+    @apply bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20;
+  }
+
+  /* Status indicators with dark mode support */
+  .status-verified {
+    @apply bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800/50;
+  }
+
+  .status-pending {
+    @apply bg-orange-50 dark:bg-orange-950/20 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800/50;
+  }
+
+  .status-error {
+    @apply bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800/50;
+  }
+
+  /* Form styling improvements */
+  .form-section {
+    @apply space-y-4 p-6 bg-card border border-border rounded-lg;
+  }
+
+  .form-step {
+    @apply relative;
+  }
+
+  .form-step::before {
+    @apply absolute left-4 top-10 w-0.5 h-full bg-border content-[''];
+  }
+
+  .form-step:last-child::before {
+    @apply hidden;
+  }
+
+  /* Toast improvements for dark mode */
+  .dark [data-sonner-toast] {
+    @apply bg-background border-border text-foreground;
+  }
+
+  .dark [data-sonner-toast][data-type="success"] {
+    @apply bg-green-950/50 border-green-800/50 text-green-300;
+  }
+
+  .dark [data-sonner-toast][data-type="error"] {
+    @apply bg-red-950/50 border-red-800/50 text-red-300;
+  }
+
+  .dark [data-sonner-toast][data-type="warning"] {
+    @apply bg-orange-950/50 border-orange-800/50 text-orange-300;
+  }
+
+  /* Logo and branding styles */
+  .logo-flower {
+    @apply w-8 h-8 bg-gradient-to-br from-primary to-primary/80 rounded-lg flex items-center justify-center;
+  }
+
+  .text-logo {
+    font-family: 'Poppins', sans-serif;
+    @apply font-semibold text-primary;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bloom {
+  0% {
+    transform: scale(0.8) rotate(-10deg);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.05) rotate(5deg);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.5s ease-out;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out;
+}
+
+.animate-bloom {
+  animation: bloom 0.6s ease-out;
+}
+
+/* Loading animation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Focus improvements for accessibility */
+.focus-visible:focus {
+  @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+}
+
+/* Mobile responsive improvements */
+@media (max-width: 768px) {
+  .glass {
+    @apply bg-white/95 dark:bg-gray-900/95;
+  }
+  
+  .glass-card {
+    @apply bg-white/95 dark:bg-gray-900/95;
+  }
+}
