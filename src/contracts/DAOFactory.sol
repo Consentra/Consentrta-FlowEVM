@@ -2,251 +2,127 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/governance/TimelockController.sol";
-import "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./ConsentraDAO.sol";
-import "./ConsentraGovernanceToken.sol";
 import "./SoulboundIdentityNFT.sol";
+import "./DAOStorageModule.sol";
+import "./DAODeploymentModule.sol";
+import "./DAOConfigModule.sol";
+import "./DAOEventModule.sol";
 
 /**
  * @title DAOFactory
- * @dev Factory contract for creating new DAOs with automated setup
+ * @dev Factory contract for creating new DAOs with automated setup - now modularized
  */
 contract DAOFactory is Ownable {
-    using Clones for address;
-    
-    address public immutable daoImplementation;
-    address public immutable tokenImplementation;
     SoulboundIdentityNFT public immutable identityNFT;
-    
-    struct DAOConfig {
-        string name;
-        string tokenName;
-        string tokenSymbol;
-        uint256 initialSupply;
-        uint256 votingDelay;
-        uint256 votingPeriod;
-        uint256 proposalThreshold;
-        uint256 quorumPercentage;
-        uint256 timelockDelay;
-    }
-    
-    struct DeployedDAO {
-        address dao;
-        address token;
-        address timelock;
-        string name;
-        address creator;
-        uint256 createdAt;
-        uint256 memberCount;
-        uint256 proposalCount;
-    }
-    
-    mapping(uint256 => DeployedDAO) public deployedDAOs;
-    mapping(address => uint256[]) public userDAOs;
-    mapping(address => mapping(uint256 => bool)) public isMember;
-    
-    uint256 public daoCounter;
-    
-    event DAOCreated(
-        uint256 indexed daoId,
-        address indexed creator,
-        address dao,
-        address token,
-        address timelock,
-        string name
-    );
-    
-    event DAOMemberJoined(uint256 indexed daoId, address indexed member);
+    DAOStorageModule public immutable storageModule;
+    DAODeploymentModule public immutable deploymentModule;
+    DAOConfigModule public immutable configModule;
+    DAOEventModule public immutable eventModule;
     
     constructor(
         address _daoImplementation,
         address _tokenImplementation,
         SoulboundIdentityNFT _identityNFT
     ) Ownable(msg.sender) {
-        daoImplementation = _daoImplementation;
-        tokenImplementation = _tokenImplementation;
         identityNFT = _identityNFT;
+        
+        // Deploy modules
+        storageModule = new DAOStorageModule();
+        deploymentModule = new DAODeploymentModule(_daoImplementation, _tokenImplementation);
+        configModule = new DAOConfigModule();
+        eventModule = new DAOEventModule();
+        
+        // Grant admin roles
+        storageModule.grantRole(storageModule.DEFAULT_ADMIN_ROLE(), address(this));
+        deploymentModule.grantRole(deploymentModule.DEFAULT_ADMIN_ROLE(), address(this));
+        configModule.grantRole(configModule.DEFAULT_ADMIN_ROLE(), address(this));
+        eventModule.grantRole(eventModule.DEFAULT_ADMIN_ROLE(), address(this));
     }
     
-    /**
-     * @dev Create a new DAO with specified configuration
-     */
     function createDAO(
-        DAOConfig memory config,
+        DAOConfigModule.DAOConfig memory config,
         address[] memory initialMembers,
         uint256[] memory initialAllocations
     ) external returns (uint256 daoId) {
         require(identityNFT.isVerified(msg.sender), "Creator must be verified");
-        require(initialMembers.length == initialAllocations.length, "Arrays length mismatch");
         
-        daoId = daoCounter++;
+        // Validate configuration
+        (bool configValid, string memory configReason) = configModule.validateConfig(config);
+        require(configValid, configReason);
+        
+        // Validate members
+        (bool membersValid, string memory membersReason) = configModule.validateMembers(
+            initialMembers, 
+            initialAllocations
+        );
+        require(membersValid, membersReason);
+        
+        // Verify all members
+        for (uint256 i = 0; i < initialMembers.length; i++) {
+            require(identityNFT.isVerified(initialMembers[i]), "All members must be verified");
+        }
+        
+        daoId = storageModule.incrementDAOCounter();
+        
+        // Emit deployment started event
+        eventModule.emitDAODeploymentStarted(daoId, msg.sender, config.name);
         
         // Deploy contracts
-        address tokenClone = _deployToken();
-        address timelockAddr = _deployTimelock(config.timelockDelay);
-        address daoClone = _deployDAO();
+        address tokenClone = deploymentModule.deployToken();
+        address timelockAddr = deploymentModule.deployTimelock(config.timelockDelay);
+        address daoClone = deploymentModule.deployDAO();
         
-        // Set up roles and permissions
-        _setupRoles(timelockAddr, daoClone);
+        // Setup roles
+        deploymentModule.setupRoles(timelockAddr, daoClone);
         
-        // Distribute tokens and setup members
-        _distributeTokens(tokenClone, initialMembers, initialAllocations, daoId);
+        // Distribute tokens
+        deploymentModule.distributeTokens(tokenClone, initialMembers, initialAllocations);
         
-        // Store DAO information
-        _storeDAOInfo(daoId, daoClone, tokenClone, timelockAddr, config.name);
+        // Store DAO info
+        storageModule.storeDAO(daoId, daoClone, tokenClone, timelockAddr, config.name, msg.sender);
         
-        emit DAOCreated(
-            daoId,
-            msg.sender,
-            daoClone,
-            tokenClone,
-            timelockAddr,
-            config.name
-        );
+        // Add members
+        for (uint256 i = 0; i < initialMembers.length; i++) {
+            storageModule.addMember(initialMembers[i], daoId);
+            eventModule.emitDAOMemberAdded(daoId, initialMembers[i], msg.sender);
+        }
+        
+        // Emit completion events
+        eventModule.emitDAODeploymentCompleted(daoId, daoClone, tokenClone, timelockAddr);
+        eventModule.emitDAOCreated(daoId, msg.sender, daoClone, tokenClone, timelockAddr, config.name);
         
         return daoId;
     }
     
-    /**
-     * @dev Deploy governance token clone
-     */
-    function _deployToken() private returns (address) {
-        return tokenImplementation.clone();
-    }
-    
-    /**
-     * @dev Deploy timelock controller
-     */
-    function _deployTimelock(uint256 delay) private returns (address) {
-        address[] memory proposers = new address[](1);
-        address[] memory executors = new address[](1);
-        proposers[0] = address(0); // Will be set to DAO address
-        executors[0] = address(0); // Will be set to DAO address
-        
-        TimelockController timelock = new TimelockController(
-            delay,
-            proposers,
-            executors,
-            address(0)
-        );
-        
-        return address(timelock);
-    }
-    
-    /**
-     * @dev Deploy DAO clone
-     */
-    function _deployDAO() private returns (address) {
-        return daoImplementation.clone();
-    }
-    
-    /**
-     * @dev Setup roles for timelock and DAO
-     */
-    function _setupRoles(address timelockAddr, address daoAddr) private {
-        TimelockController timelock = TimelockController(payable(timelockAddr));
-        
-        timelock.grantRole(timelock.PROPOSER_ROLE(), daoAddr);
-        timelock.grantRole(timelock.EXECUTOR_ROLE(), daoAddr);
-        timelock.renounceRole(timelock.DEFAULT_ADMIN_ROLE(), address(this));
-    }
-    
-    /**
-     * @dev Distribute initial tokens to members
-     */
-    function _distributeTokens(
-        address tokenAddr,
-        address[] memory members,
-        uint256[] memory allocations,
-        uint256 daoId
-    ) private {
-        ConsentraGovernanceToken token = ConsentraGovernanceToken(tokenAddr);
-        
-        for (uint256 i = 0; i < members.length; i++) {
-            require(identityNFT.isVerified(members[i]), "All members must be verified");
-            token.mint(members[i], allocations[i]);
-            isMember[members[i]][daoId] = true;
-            userDAOs[members[i]].push(daoId);
-        }
-    }
-    
-    /**
-     * @dev Store DAO information
-     */
-    function _storeDAOInfo(
-        uint256 daoId,
-        address daoAddr,
-        address tokenAddr,
-        address timelockAddr,
-        string memory name
-    ) private {
-        deployedDAOs[daoId] = DeployedDAO({
-            dao: daoAddr,
-            token: tokenAddr,
-            timelock: timelockAddr,
-            name: name,
-            creator: msg.sender,
-            createdAt: block.timestamp,
-            memberCount: 0, // Will be updated in _distributeTokens
-            proposalCount: 0
-        });
-    }
-    
-    /**
-     * @dev Join an existing DAO (requires token transfer from existing members)
-     */
     function joinDAO(uint256 daoId) external {
         require(identityNFT.isVerified(msg.sender), "Must be verified to join DAO");
-        require(!isMember[msg.sender][daoId], "Already a member");
-        
-        isMember[msg.sender][daoId] = true;
-        userDAOs[msg.sender].push(daoId);
-        deployedDAOs[daoId].memberCount++;
-        
-        emit DAOMemberJoined(daoId, msg.sender);
+        storageModule.addMember(msg.sender, daoId);
+        eventModule.emitDAOMemberAdded(daoId, msg.sender, msg.sender);
     }
     
-    /**
-     * @dev Get DAOs for a user
-     */
+    // Delegate view functions to storage module
     function getUserDAOs(address user) external view returns (uint256[] memory) {
-        return userDAOs[user];
+        return storageModule.getUserDAOs(user);
     }
     
-    /**
-     * @dev Get DAO information
-     */
-    function getDAO(uint256 daoId) external view returns (DeployedDAO memory) {
-        return deployedDAOs[daoId];
+    function getDAO(uint256 daoId) external view returns (DAOStorageModule.DeployedDAO memory) {
+        return storageModule.getDAO(daoId);
     }
     
-    /**
-     * @dev Get all DAOs (paginated)
-     */
     function getAllDAOs(uint256 offset, uint256 limit) 
         external 
         view 
-        returns (DeployedDAO[] memory daos) 
+        returns (DAOStorageModule.DeployedDAO[] memory) 
     {
-        uint256 end = offset + limit;
-        if (end > daoCounter) {
-            end = daoCounter;
-        }
-        
-        daos = new DeployedDAO[](end - offset);
-        for (uint256 i = offset; i < end; i++) {
-            daos[i - offset] = deployedDAOs[i];
-        }
-        
-        return daos;
+        return storageModule.getAllDAOs(offset, limit);
     }
     
-    /**
-     * @dev Check if user is member of DAO
-     */
     function checkMembership(address user, uint256 daoId) external view returns (bool) {
-        return isMember[user][daoId];
+        return storageModule.checkMembership(user, daoId);
+    }
+    
+    function daoCounter() external view returns (uint256) {
+        return storageModule.daoCounter();
     }
 }
