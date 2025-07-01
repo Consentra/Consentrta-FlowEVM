@@ -18,6 +18,18 @@ contract ConsentraDAO is Pausable {
     bytes32 public constant AI_OPERATOR_ROLE = keccak256("AI_OPERATOR_ROLE");
     bytes32 public constant PROPOSAL_CREATOR_ROLE = keccak256("PROPOSAL_CREATOR_ROLE");
     
+    // Define ProposalState enum locally to avoid import issues
+    enum ProposalState {
+        Pending,
+        Active,
+        Canceled,
+        Defeated,
+        Succeeded,
+        Queued,
+        Expired,
+        Executed
+    }
+    
     CoreGovernanceModule public immutable coreGovernance;
     DAOIntegrationModule public immutable integrationModule;
     
@@ -32,7 +44,7 @@ contract ConsentraDAO is Pausable {
     }
     
     modifier validProposal(uint256 proposalId) {
-        if (coreGovernance.state(proposalId) == CoreGovernanceModule.ProposalState.Pending) {
+        if (uint8(coreGovernance.state(proposalId)) == uint8(ProposalState.Pending)) {
             revert ProposalNotFound();
         }
         _;
