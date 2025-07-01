@@ -20,20 +20,30 @@ contract DAOFactory is Ownable {
     DAOConfigModule public immutable configModule;
     DAOEventModule public immutable eventModule;
     
+    struct DeploymentAddresses {
+        address tokenClone;
+        address timelockAddr;
+        address daoClone;
+    }
+    
     constructor(
         address _daoImplementation,
         address _tokenImplementation,
-        SoulboundIdentityNFT _identityNFT
+        SoulboundIdentityNFT _identityNFT,
+        address _storageModule,
+        address _deploymentModule,
+        address _configModule,
+        address _eventModule
     ) Ownable(msg.sender) {
         identityNFT = _identityNFT;
         
-        // Deploy modules
-        storageModule = new DAOStorageModule();
-        deploymentModule = new DAODeploymentModule(_daoImplementation, _tokenImplementation);
-        configModule = new DAOConfigModule();
-        eventModule = new DAOEventModule();
+        // Use pre-deployed modules
+        storageModule = DAOStorageModule(_storageModule);
+        deploymentModule = DAODeploymentModule(_deploymentModule);
+        configModule = DAOConfigModule(_configModule);
+        eventModule = DAOEventModule(_eventModule);
         
-        // Grant admin roles
+        // Grant admin roles to this factory
         storageModule.grantRole(storageModule.DEFAULT_ADMIN_ROLE(), address(this));
         deploymentModule.grantRole(deploymentModule.DEFAULT_ADMIN_ROLE(), address(this));
         configModule.grantRole(configModule.DEFAULT_ADMIN_ROLE(), address(this));
@@ -47,6 +57,28 @@ contract DAOFactory is Ownable {
     ) external returns (uint256 daoId) {
         require(identityNFT.isVerified(msg.sender), "Creator must be verified");
         
+        // Validate configuration and members
+        _validateDAOCreation(config, initialMembers, initialAllocations);
+        
+        daoId = storageModule.incrementDAOCounter();
+        
+        // Emit deployment started event
+        eventModule.emitDAODeploymentStarted(daoId, msg.sender, config.name);
+        
+        // Deploy contracts and setup
+        DeploymentAddresses memory addresses = _deployDAOContracts(config);
+        
+        // Store DAO info and add members
+        _finalizeDAOCreation(daoId, addresses, config, initialMembers, initialAllocations);
+        
+        return daoId;
+    }
+    
+    function _validateDAOCreation(
+        DAOConfigModule.DAOConfig memory config,
+        address[] memory initialMembers,
+        uint256[] memory initialAllocations
+    ) private view {
         // Validate configuration
         (bool configValid, string memory configReason) = configModule.validateConfig(config);
         require(configValid, configReason);
@@ -62,25 +94,41 @@ contract DAOFactory is Ownable {
         for (uint256 i = 0; i < initialMembers.length; i++) {
             require(identityNFT.isVerified(initialMembers[i]), "All members must be verified");
         }
-        
-        daoId = storageModule.incrementDAOCounter();
-        
-        // Emit deployment started event
-        eventModule.emitDAODeploymentStarted(daoId, msg.sender, config.name);
-        
+    }
+    
+    function _deployDAOContracts(
+        DAOConfigModule.DAOConfig memory config
+    ) private returns (DeploymentAddresses memory addresses) {
         // Deploy contracts
-        address tokenClone = deploymentModule.deployToken();
-        address timelockAddr = deploymentModule.deployTimelock(config.timelockDelay);
-        address daoClone = deploymentModule.deployDAO();
+        addresses.tokenClone = deploymentModule.deployToken();
+        addresses.timelockAddr = deploymentModule.deployTimelock(config.timelockDelay);
+        addresses.daoClone = deploymentModule.deployDAO();
         
         // Setup roles
-        deploymentModule.setupRoles(timelockAddr, daoClone);
+        deploymentModule.setupRoles(addresses.timelockAddr, addresses.daoClone);
         
+        return addresses;
+    }
+    
+    function _finalizeDAOCreation(
+        uint256 daoId,
+        DeploymentAddresses memory addresses,
+        DAOConfigModule.DAOConfig memory config,
+        address[] memory initialMembers,
+        uint256[] memory initialAllocations
+    ) private {
         // Distribute tokens
-        deploymentModule.distributeTokens(tokenClone, initialMembers, initialAllocations);
+        deploymentModule.distributeTokens(addresses.tokenClone, initialMembers, initialAllocations);
         
         // Store DAO info
-        storageModule.storeDAO(daoId, daoClone, tokenClone, timelockAddr, config.name, msg.sender);
+        storageModule.storeDAO(
+            daoId, 
+            addresses.daoClone, 
+            addresses.tokenClone, 
+            addresses.timelockAddr, 
+            config.name, 
+            msg.sender
+        );
         
         // Add members
         for (uint256 i = 0; i < initialMembers.length; i++) {
@@ -89,10 +137,8 @@ contract DAOFactory is Ownable {
         }
         
         // Emit completion events
-        eventModule.emitDAODeploymentCompleted(daoId, daoClone, tokenClone, timelockAddr);
-        eventModule.emitDAOCreated(daoId, msg.sender, daoClone, tokenClone, timelockAddr, config.name);
-        
-        return daoId;
+        eventModule.emitDAODeploymentCompleted(daoId, addresses.daoClone, addresses.tokenClone, addresses.timelockAddr);
+        eventModule.emitDAOCreated(daoId, msg.sender, addresses.daoClone, addresses.tokenClone, addresses.timelockAddr, config.name);
     }
     
     function joinDAO(uint256 daoId) external {
