@@ -1,4 +1,3 @@
-
 import { apiClient } from '@/utils/api';
 import { openRouterService } from './OpenRouterService';
 
@@ -102,6 +101,7 @@ export class EthraKnowledgeService {
     const now = Date.now();
     
     if (this.platformCache && (now - this.lastCacheUpdate) < this.CACHE_DURATION) {
+      console.log('Using cached platform data');
       return this.platformCache;
     }
 
@@ -142,7 +142,7 @@ export class EthraKnowledgeService {
       };
       
       this.lastCacheUpdate = now;
-      console.log('Platform data refreshed:', {
+      console.log('Platform data refreshed successfully:', {
         proposals: proposals.length,
         daos: daos.length,
         votes: votes.length,
@@ -205,6 +205,8 @@ export class EthraKnowledgeService {
 
   async generateResponse(query: string, conversationHistory: any[] = []): Promise<string> {
     try {
+      console.log('Generating Ethra response for:', query.substring(0, 50) + '...');
+      
       const analysis = this.analyzeUserQuery(query);
       const platformData = await this.getPlatformData();
       
@@ -212,40 +214,51 @@ export class EthraKnowledgeService {
       console.log('Platform data available:', {
         proposals: platformData.proposals.length,
         daos: platformData.daos.length,
-        votes: platformData.votes.length
+        votes: platformData.votes.length,
+        ecosystemStats: !!platformData.ecosystemStats
       });
       
-      // Build comprehensive context for AI
+      // Build comprehensive context for AI with proper structure
       const context = {
         proposals: platformData.proposals,
         daos: platformData.daos,
+        votes: platformData.votes,
         ecosystemStats: platformData.ecosystemStats,
         conversationHistory: conversationHistory.map(entry => ({
-          user: entry.content,
-          ai: entry.content
+          role: entry.sender === 'user' ? 'user' : 'assistant',
+          content: entry.content
         }))
       };
       
-      // Use OpenRouter/Together AI for intelligent responses
+      console.log('Sending context to OpenRouter:', {
+        proposalsCount: context.proposals.length,
+        daosCount: context.daos.length,
+        votesCount: context.votes.length,
+        historyCount: context.conversationHistory.length
+      });
+      
+      // Use OpenRouter for intelligent responses
       const aiResponse = await openRouterService.analyzeGovernanceData(query, context);
       
+      console.log('Received AI response:', aiResponse.substring(0, 100) + '...');
       return aiResponse;
       
     } catch (error) {
       console.error('Error generating Ethra response:', error);
       
-      // Fallback to local analysis if AI fails
+      // Provide a more helpful fallback that explains the issue
       const platformData = await this.getPlatformData();
-      const analysis = this.analyzeUserQuery(query);
       
-      switch (analysis.intent) {
-        case 'proposal_analysis':
-          return await this.generateProposalAnalysis(query, platformData, analysis);
-        case 'dao_analysis':
-          return await this.generateDAOAnalysis(query, platformData, analysis);
-        default:
-          return `I have access to ${platformData.proposals.length} proposals and ${platformData.daos.length} DAOs. However, I'm experiencing connectivity issues with the AI service. Please try rephrasing your question or ask about specific governance topics.`;
-      }
+      return `I'm experiencing technical difficulties connecting to my advanced AI analysis service. However, I can see that the Consenstra platform currently has ${platformData.proposals.length} proposals and ${platformData.daos.length} DAOs active. 
+
+The connection issue might be related to API connectivity. For now, you can ask me specific questions about:
+- Current proposal counts and basic statistics
+- General DAO governance concepts
+- Voting mechanisms and best practices
+
+I apologize for the technical difficulties. The development team has been notified of this issue.
+
+Error details: ${error.message}`;
     }
   }
 
