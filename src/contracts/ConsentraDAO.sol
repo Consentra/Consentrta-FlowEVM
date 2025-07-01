@@ -2,16 +2,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/governance/Governor.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorSettings.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorCountingSimple.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorVotes.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorVotesQuorumFraction.sol";
-import "@openzeppelin/contracts/governance/extensions/GovernorTimelockControl.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
+import "./CoreGovernanceModule.sol";
+import "./DAOIntegrationModule.sol";
 import "./SoulboundIdentityNFT.sol";
 import "./AIVotingModule.sol";
 import "./ProposalMetadataModule.sol";
@@ -20,36 +14,25 @@ import "./ProposalMetadataModule.sol";
  * @title ConsentraDAO
  * @dev Enhanced DAO governance contract with sybil resistance and AI-powered voting
  */
-contract ConsentraDAO is 
-    Governor,
-    GovernorSettings,
-    GovernorCountingSimple,
-    GovernorVotes,
-    GovernorVotesQuorumFraction,
-    GovernorTimelockControl,
-    AccessControl,
-    ReentrancyGuard,
-    Pausable
-{
+contract ConsentraDAO is Pausable {
     bytes32 public constant AI_OPERATOR_ROLE = keccak256("AI_OPERATOR_ROLE");
     bytes32 public constant PROPOSAL_CREATOR_ROLE = keccak256("PROPOSAL_CREATOR_ROLE");
     
-    SoulboundIdentityNFT public immutable identityNFT;
-    AIVotingModule public immutable aiVotingModule;
-    ProposalMetadataModule public immutable proposalMetadataModule;
+    CoreGovernanceModule public immutable coreGovernance;
+    DAOIntegrationModule public immutable integrationModule;
     
     error NotVerifiedIdentity();
     error ProposalNotFound();
     
     modifier onlyVerified() {
-        if (!identityNFT.isVerified(msg.sender)) {
+        if (!coreGovernance.identityNFT().isVerified(msg.sender)) {
             revert NotVerifiedIdentity();
         }
         _;
     }
     
     modifier validProposal(uint256 proposalId) {
-        if (state(proposalId) == ProposalState.Pending) {
+        if (coreGovernance.state(proposalId) == CoreGovernanceModule.ProposalState.Pending) {
             revert ProposalNotFound();
         }
         _;
@@ -61,20 +44,24 @@ contract ConsentraDAO is
         SoulboundIdentityNFT _identityNFT,
         AIVotingModule _aiVotingModule,
         ProposalMetadataModule _proposalMetadataModule
-    )
-        Governor("ConsentraDAO")
-        GovernorSettings(1, 50400, 0)
-        GovernorVotes(_token)
-        GovernorVotesQuorumFraction(4)
-        GovernorTimelockControl(_timelock)
-    {
-        identityNFT = _identityNFT;
-        aiVotingModule = _aiVotingModule;
-        proposalMetadataModule = _proposalMetadataModule;
+    ) {
+        coreGovernance = new CoreGovernanceModule(
+            _token,
+            _timelock,
+            _identityNFT,
+            "ConsentraDAO"
+        );
         
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(AI_OPERATOR_ROLE, msg.sender);
-        _grantRole(PROPOSAL_CREATOR_ROLE, msg.sender);
+        integrationModule = new DAOIntegrationModule(
+            _identityNFT,
+            _aiVotingModule,
+            _proposalMetadataModule
+        );
+        
+        // Grant necessary roles
+        coreGovernance.grantRole(coreGovernance.DEFAULT_ADMIN_ROLE(), address(integrationModule));
+        integrationModule.grantRole(integrationModule.DEFAULT_ADMIN_ROLE(), address(this));
+        integrationModule.grantRole(integrationModule.AI_OPERATOR_ROLE(), address(this));
     }
     
     function proposeWithMetadata(
@@ -87,9 +74,9 @@ contract ConsentraDAO is
         uint256 aiConfidenceScore,
         bool enableAIVoting
     ) public onlyVerified returns (uint256) {
-        uint256 proposalId = propose(targets, values, calldatas, description);
+        uint256 proposalId = coreGovernance.propose(targets, values, calldatas, description);
         
-        proposalMetadataModule.storeProposalMetadata(
+        integrationModule.storeProposalMetadata(
             proposalId,
             title,
             description,
@@ -108,9 +95,9 @@ contract ConsentraDAO is
         string calldata reason,
         bool automated
     ) public onlyVerified returns (uint256) {
-        uint256 weight = castVoteWithReason(proposalId, support, reason);
+        uint256 weight = coreGovernance.castVoteWithReason(proposalId, support, reason);
         
-        proposalMetadataModule.recordVote(
+        integrationModule.recordVote(
             msg.sender,
             proposalId,
             support,
@@ -126,21 +113,24 @@ contract ConsentraDAO is
         uint256 proposalId,
         address voter,
         string memory category
-    ) external onlyRole(AI_OPERATOR_ROLE) validProposal(proposalId) nonReentrant {
-        (uint8 vote, string memory reason) = aiVotingModule.executeAIVote(
+    ) external validProposal(proposalId) {
+        require(integrationModule.hasRole(integrationModule.AI_OPERATOR_ROLE(), msg.sender), "Not AI operator");
+        
+        (uint8 vote, string memory reason) = integrationModule.executeAIVote(
             proposalId,
             voter,
             category,
-            address(this)
+            address(coreGovernance)
         );
         
-        _castVote(proposalId, voter, vote, reason, "");
+        // Cast vote through core governance
+        coreGovernance.castVoteWithReason(proposalId, vote, reason);
         
-        proposalMetadataModule.recordVote(
+        integrationModule.recordVote(
             voter,
             proposalId,
             vote,
-            getVotes(voter, block.number - 1),
+            coreGovernance.getVotes(voter, block.number - 1),
             reason,
             true
         );
@@ -151,7 +141,7 @@ contract ConsentraDAO is
         view 
         returns (ProposalMetadataModule.ProposalMetadata memory) 
     {
-        return proposalMetadataModule.getProposalMetadata(proposalId);
+        return integrationModule.getProposalMetadata(proposalId);
     }
     
     function getUserStats(address user) 
@@ -159,131 +149,46 @@ contract ConsentraDAO is
         view 
         returns (uint256 voteCount, uint256 proposalCount, bool isVerified) 
     {
-        (uint256 votes, uint256 proposals) = proposalMetadataModule.getUserStats(user);
-        return (votes, proposals, identityNFT.isVerified(user));
+        return integrationModule.getUserStats(user);
     }
     
-    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function pause() external {
+        require(coreGovernance.hasRole(coreGovernance.DEFAULT_ADMIN_ROLE(), msg.sender), "Not admin");
         _pause();
     }
     
-    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function unpause() external {
+        require(coreGovernance.hasRole(coreGovernance.DEFAULT_ADMIN_ROLE(), msg.sender), "Not admin");
         _unpause();
     }
     
-    function _castVote(
+    // Delegate functions to core governance
+    function propose(
+        address[] memory targets,
+        uint256[] memory values,
+        bytes[] memory calldatas,
+        string memory description
+    ) public returns (uint256) {
+        return coreGovernance.propose(targets, values, calldatas, description);
+    }
+    
+    function castVote(uint256 proposalId, uint8 support) public returns (uint256) {
+        return coreGovernance.castVote(proposalId, support);
+    }
+    
+    function castVoteWithReason(
         uint256 proposalId,
-        address account,
         uint8 support,
-        string memory reason,
-        bytes memory params
-    ) internal override whenNotPaused returns (uint256) {
-        if (!identityNFT.isVerified(account)) {
-            revert NotVerifiedIdentity();
-        }
-        
-        return super._castVote(proposalId, account, support, reason, params);
+        string calldata reason
+    ) public returns (uint256) {
+        return coreGovernance.castVoteWithReason(proposalId, support, reason);
     }
     
-    function _executeOperations(
-        uint256 proposalId,
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
-        bytes32 descriptionHash
-    ) internal override(Governor, GovernorTimelockControl) {
-        super._executeOperations(proposalId, targets, values, calldatas, descriptionHash);
+    function state(uint256 proposalId) public view returns (CoreGovernanceModule.ProposalState) {
+        return coreGovernance.state(proposalId);
     }
     
-    function _queueOperations(
-        uint256 proposalId,
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
-        bytes32 descriptionHash
-    ) internal override(Governor, GovernorTimelockControl) returns (uint48) {
-        return super._queueOperations(proposalId, targets, values, calldatas, descriptionHash);
-    }
-    
-    function _cancel(
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
-        bytes32 descriptionHash
-    ) internal override(Governor, GovernorTimelockControl) returns (uint256) {
-        return super._cancel(targets, values, calldatas, descriptionHash);
-    }
-    
-    function _executor()
-        internal
-        view
-        override(Governor, GovernorTimelockControl)
-        returns (address)
-    {
-        return super._executor();
-    }
-    
-    function state(uint256 proposalId)
-        public
-        view
-        override(Governor, GovernorTimelockControl)
-        returns (ProposalState)
-    {
-        return super.state(proposalId);
-    }
-    
-    function proposalNeedsQueuing(uint256 proposalId)
-        public
-        view
-        override(Governor, GovernorTimelockControl)
-        returns (bool)
-    {
-        return super.proposalNeedsQueuing(proposalId);
-    }
-    
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        override(Governor, AccessControl)
-        returns (bool)
-    {
-        return super.supportsInterface(interfaceId);
-    }
-
-    // Required overrides
-    function votingDelay()
-        public
-        view
-        override(Governor, GovernorSettings)
-        returns (uint256)
-    {
-        return super.votingDelay();
-    }
-    
-    function votingPeriod()
-        public
-        view
-        override(Governor, GovernorSettings)
-        returns (uint256)
-    {
-        return super.votingPeriod();
-    }
-    
-    function quorum(uint256 blockNumber)
-        public
-        view
-        override(Governor, GovernorVotesQuorumFraction)
-        returns (uint256)
-    {
-        return super.quorum(blockNumber);
-    }
-    
-    function proposalThreshold()
-        public
-        view
-        override(Governor, GovernorSettings)
-        returns (uint256)
-    {
-        return super.proposalThreshold();
+    function getVotes(address account, uint256 blockNumber) public view returns (uint256) {
+        return coreGovernance.getVotes(account, blockNumber);
     }
 }
