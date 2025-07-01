@@ -60,25 +60,46 @@ class OpenRouterService {
       conversationHistory?: any[];
     }
   ): Promise<string> {
-    const systemPrompt = `You are Ethra, an expert AI governance analyst for decentralized autonomous organizations (DAOs). You have access to real-time blockchain data and governance metrics.
+    // Create detailed context summary
+    const proposalSummary = context.proposals?.length > 0 ? 
+      `Current proposals (${context.proposals.length} total):
+${context.proposals.slice(0, 5).map(p => 
+  `- "${p.title}" (${p.status}) - ${p.votes_for || 0} for, ${p.votes_against || 0} against, ${p.total_votes || 0} total votes`
+).join('\n')}` : 'No proposals currently available';
+
+    const daoSummary = context.daos?.length > 0 ?
+      `Active DAOs (${context.daos.length} total):
+${context.daos.slice(0, 3).map(d => 
+  `- ${d.name}: ${d.member_count || 0} members, $${d.treasury_value || 0} treasury`
+).join('\n')}` : 'No DAOs currently available';
+
+    const systemPrompt = `You are Ethra, an expert AI governance analyst for Consenstra DAO platform. You have access to REAL-TIME platform data and must provide accurate, data-driven responses.
+
+CURRENT PLATFORM DATA:
+${proposalSummary}
+
+${daoSummary}
+
+INSTRUCTIONS:
+- Use the actual data provided above in your responses
+- Be specific with numbers and details from the real data
+- If asked about proposals, reference the actual proposal titles and vote counts
+- If asked about DAOs, reference the actual DAO names and member counts
+- Don't make up data - use only what's provided
+- Be analytical and provide insights based on the real numbers
+- If the data shows no activity, say so explicitly
 
 Your role is to:
-- Analyze proposals with technical depth and risk assessment
-- Explain complex governance mechanisms in accessible terms
-- Provide data-driven insights based on actual blockchain activity
-- Help users understand voting patterns and governance trends
-- Offer educational guidance on DAO participation
+- Analyze real proposal data with specific vote counts and status
+- Explain governance patterns based on actual platform activity
+- Provide insights using the current ecosystem statistics
+- Help users understand the platform's current state accurately
 
-Context data available:
-- Active proposals: ${context.proposals?.length || 0}
-- DAOs monitored: ${context.daos?.length || 0}
-- Real-time ecosystem statistics: ${context.ecosystemStats ? 'Available' : 'Not available'}
-
-Be thorough, analytical, and educational in your responses. Use the provided data to give specific insights.`;
+Always reference specific data points from the context provided above.`;
 
     const messages: OpenRouterMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...context.conversationHistory?.slice(-3).map(entry => [
+      ...context.conversationHistory?.slice(-2).map(entry => [
         { role: 'user' as const, content: entry.user },
         { role: 'assistant' as const, content: entry.ai }
       ]).flat() || [],
