@@ -10,6 +10,10 @@ interface OpenRouterResponse {
       content: string;
     };
   }>;
+  error?: {
+    message: string;
+    type: string;
+  };
 }
 
 class OpenRouterService {
@@ -22,6 +26,16 @@ class OpenRouterService {
 
   async chat(messages: OpenRouterMessage[], model: string = 'anthropic/claude-3.5-sonnet'): Promise<string> {
     try {
+      console.log('OpenRouter API call:', {
+        model,
+        messageCount: messages.length,
+        apiKeyExists: !!this.apiKey
+      });
+
+      if (!this.apiKey) {
+        throw new Error('OpenRouter API key is missing');
+      }
+
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -34,17 +48,36 @@ class OpenRouterService {
           model,
           messages,
           temperature: 0.7,
-          max_tokens: 1000,
+          max_tokens: 1500,
           stream: false
         })
       });
 
+      console.log('OpenRouter response status:', response.status);
+
       if (!response.ok) {
-        throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('OpenRouter API error response:', errorText);
+        throw new Error(`OpenRouter API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const data: OpenRouterResponse = await response.json();
-      return data.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
+      
+      if (data.error) {
+        console.error('OpenRouter API returned error:', data.error);
+        throw new Error(`OpenRouter API error: ${data.error.message}`);
+      }
+
+      const content = data.choices?.[0]?.message?.content;
+      
+      if (!content) {
+        console.error('No content in OpenRouter response:', data);
+        throw new Error('No response content from OpenRouter API');
+      }
+
+      console.log('OpenRouter response received:', content.substring(0, 100) + '...');
+      return content;
+
     } catch (error) {
       console.error('OpenRouter API error:', error);
       throw error;
@@ -60,53 +93,100 @@ class OpenRouterService {
       conversationHistory?: any[];
     }
   ): Promise<string> {
-    // Create detailed context summary
-    const proposalSummary = context.proposals?.length > 0 ? 
-      `Current proposals (${context.proposals.length} total):
-${context.proposals.slice(0, 5).map(p => 
-  `- "${p.title}" (${p.status}) - ${p.votes_for || 0} for, ${p.votes_against || 0} against, ${p.total_votes || 0} total votes`
-).join('\n')}` : 'No proposals currently available';
+    try {
+      console.log('Analyzing governance data:', {
+        userMessage: userMessage.substring(0, 50) + '...',
+        proposalsCount: context.proposals?.length || 0,
+        daosCount: context.daos?.length || 0,
+        hasEcosystemStats: !!context.ecosystemStats
+      });
 
-    const daoSummary = context.daos?.length > 0 ?
-      `Active DAOs (${context.daos.length} total):
-${context.daos.slice(0, 3).map(d => 
-  `- ${d.name}: ${d.member_count || 0} members, $${d.treasury_value || 0} treasury`
-).join('\n')}` : 'No DAOs currently available';
+      // Create detailed context summary with actual data
+      const proposalDetails = context.proposals?.slice(0, 10).map(p => ({
+        title: p.title,
+        status: p.status,
+        votesFor: p.votes_for || 0,
+        votesAgainst: p.votes_against || 0,
+        totalVotes: p.total_votes || 0,
+        category: p.category,
+        deadline: p.deadline
+      })) || [];
 
-    const systemPrompt = `You are Ethra, an expert AI governance analyst for Consenstra DAO platform. You have access to REAL-TIME platform data and must provide accurate, data-driven responses.
+      const daoDetails = context.daos?.slice(0, 5).map(d => ({
+        name: d.name,
+        memberCount: d.member_count || 0,
+        treasuryValue: d.treasury_value || '0',
+        proposalCount: d.proposal_count || 0
+      })) || [];
 
-CURRENT PLATFORM DATA:
-${proposalSummary}
+      const platformData = {
+        proposals: proposalDetails,
+        daos: daoDetails,
+        ecosystemStats: context.ecosystemStats || null,
+        totalProposals: context.proposals?.length || 0,
+        totalDAOs: context.daos?.length || 0,
+        timestamp: new Date().toISOString()
+      };
 
-${daoSummary}
+      const systemPrompt = `You are Ethra, an expert AI governance analyst for the Consenstra DAO platform. You have access to REAL-TIME platform data and must provide accurate, data-driven responses about this specific platform.
+
+CURRENT CONSENSTRA PLATFORM DATA:
+${JSON.stringify(platformData, null, 2)}
 
 INSTRUCTIONS:
-- Use the actual data provided above in your responses
-- Be specific with numbers and details from the real data
-- If asked about proposals, reference the actual proposal titles and vote counts
-- If asked about DAOs, reference the actual DAO names and member counts
-- Don't make up data - use only what's provided
-- Be analytical and provide insights based on the real numbers
-- If the data shows no activity, say so explicitly
+- You are specifically analyzing the Consenstra DAO platform
+- Use ONLY the actual data provided above in your responses
+- When discussing proposals, reference the actual proposal titles, vote counts, and statuses from the data
+- When discussing DAOs, reference the actual DAO names, member counts, and treasury values
+- Be specific with numbers and cite the exact data you're referencing
+- If asked about trends, calculate based on the real data provided
+- If the data shows no activity, explain what you see explicitly
+- Always mention you're analyzing "Consenstra platform data" to be clear
+- Provide insights and analysis based on the actual numbers
+- If asked general governance questions, relate them back to what you see in the Consenstra data
 
 Your role is to:
-- Analyze real proposal data with specific vote counts and status
-- Explain governance patterns based on actual platform activity
-- Provide insights using the current ecosystem statistics
-- Help users understand the platform's current state accurately
+- Analyze real Consenstra proposal data with specific vote counts and status
+- Explain governance patterns based on actual Consenstra platform activity  
+- Provide insights using the current Consenstra ecosystem statistics
+- Help users understand the Consenstra platform's current state accurately
+- Answer questions about DAO governance in the context of what you see on Consenstra
 
-Always reference specific data points from the context provided above.`;
+Always reference specific data points from the Consenstra platform context provided above.`;
 
-    const messages: OpenRouterMessage[] = [
-      { role: 'system', content: systemPrompt },
-      ...context.conversationHistory?.slice(-2).map(entry => [
-        { role: 'user' as const, content: entry.user },
-        { role: 'assistant' as const, content: entry.ai }
-      ]).flat() || [],
-      { role: 'user', content: userMessage }
-    ];
+      // Format conversation history properly
+      const historyMessages: OpenRouterMessage[] = [];
+      if (context.conversationHistory && context.conversationHistory.length > 0) {
+        context.conversationHistory.slice(-4).forEach(entry => {
+          if (entry.role === 'user') {
+            historyMessages.push({ role: 'user', content: entry.content });
+          } else if (entry.role === 'assistant') {
+            historyMessages.push({ role: 'assistant', content: entry.content });
+          }
+        });
+      }
 
-    return this.chat(messages);
+      const messages: OpenRouterMessage[] = [
+        { role: 'system', content: systemPrompt },
+        ...historyMessages,
+        { role: 'user', content: userMessage }
+      ];
+
+      console.log('Sending to OpenRouter:', {
+        messageCount: messages.length,
+        systemPromptLength: systemPrompt.length,
+        userMessage: userMessage
+      });
+
+      const response = await this.chat(messages);
+      
+      console.log('Received response from OpenRouter:', response.substring(0, 100) + '...');
+      return response;
+
+    } catch (error) {
+      console.error('Error in analyzeGovernanceData:', error);
+      throw new Error(`AI analysis failed: ${error.message}`);
+    }
   }
 }
 
