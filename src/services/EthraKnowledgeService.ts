@@ -1,5 +1,5 @@
-
 import { apiClient } from '@/utils/api';
+import { openRouterService } from './OpenRouterService';
 
 interface GovernanceKnowledge {
   concepts: Record<string, string>;
@@ -107,9 +107,10 @@ export class EthraKnowledgeService {
     try {
       console.log('Fetching fresh platform data for Ethra...');
       
-      const [proposalsResponse, daosResponse, ecosystemResponse] = await Promise.allSettled([
+      const [proposalsResponse, daosResponse, votesResponse, ecosystemResponse] = await Promise.allSettled([
         apiClient.getProposals({ limit: 50 }),
         apiClient.getDAOs({ limit: 20 }),
+        apiClient.getVotes({ limit: 100 }),
         apiClient.getEcosystemStats()
       ]);
 
@@ -119,24 +120,22 @@ export class EthraKnowledgeService {
       const daos = daosResponse.status === 'fulfilled' && daosResponse.value.success 
         ? daosResponse.value.data : [];
       
+      const votes = votesResponse.status === 'fulfilled' && votesResponse.value.success 
+        ? votesResponse.value.data : [];
+      
       const ecosystemStats = ecosystemResponse.status === 'fulfilled' && ecosystemResponse.value.success 
         ? ecosystemResponse.value.data : null;
 
-      // Get votes data separately
-      const votesResponse = await apiClient.getVotes({ limit: 100 });
-      const votes = votesResponse.success ? votesResponse.data : [];
-
-      // Extract user data from proposals, votes, and DAOs
+      // Extract user data from proposals and DAOs
       const users = [...new Set([
-        ...proposals.map(p => p.creator_id || p.creator).filter(Boolean),
-        ...votes.map(v => v.user_id).filter(Boolean),
-        ...daos.map(d => d.creator_id).filter(Boolean)
+        ...proposals.map(p => p.creator || p.creatorId).filter(Boolean),
+        ...daos.map(d => d.creator).filter(Boolean)
       ])];
 
       this.platformCache = {
         proposals,
         daos,
-        users: users.map(address => ({ address, verified: true })), // Mock verified status
+        users: users.map(address => ({ address, verified: true })),
         votes,
         ecosystemStats
       };
@@ -154,7 +153,6 @@ export class EthraKnowledgeService {
     } catch (error) {
       console.error('Failed to fetch platform data:', error);
       
-      // Return cached data if available, or empty data
       return this.platformCache || {
         proposals: [],
         daos: [],
@@ -210,41 +208,43 @@ export class EthraKnowledgeService {
       const platformData = await this.getPlatformData();
       
       console.log('Query analysis:', analysis);
+      console.log('Platform data available:', {
+        proposals: platformData.proposals.length,
+        daos: platformData.daos.length,
+        votes: platformData.votes.length
+      });
       
-      // Build context-aware response
-      let response = '';
+      // Build comprehensive context for AI
+      const context = {
+        proposals: platformData.proposals,
+        daos: platformData.daos,
+        ecosystemStats: platformData.ecosystemStats,
+        conversationHistory: conversationHistory.map(entry => ({
+          user: entry.content,
+          ai: entry.content
+        }))
+      };
       
-      switch (analysis.intent) {
-        case 'proposal_analysis':
-          response = await this.generateProposalAnalysis(query, platformData, analysis);
-          break;
-        case 'dao_analysis':
-          response = await this.generateDAOAnalysis(query, platformData, analysis);
-          break;
-        case 'treasury_analysis':
-          response = await this.generateTreasuryAnalysis(query, platformData, analysis);
-          break;
-        case 'governance_explanation':
-          response = this.generateGovernanceExplanation(query, analysis);
-          break;
-        case 'educational':
-          response = this.generateEducationalResponse(query, analysis);
-          break;
-        case 'comparison':
-          response = await this.generateComparison(query, platformData, analysis);
-          break;
-        case 'analytics':
-          response = await this.generateAnalytics(query, platformData, analysis);
-          break;
-        default:
-          response = this.generateGeneralResponse(query, platformData, analysis);
-      }
+      // Use OpenRouter/Together AI for intelligent responses
+      const aiResponse = await openRouterService.analyzeGovernanceData(query, context);
       
-      return response;
+      return aiResponse;
       
     } catch (error) {
       console.error('Error generating Ethra response:', error);
-      return "I apologize, but I'm having trouble accessing the latest platform data right now. Please try asking your question again, or contact support if the issue persists.";
+      
+      // Fallback to local analysis if AI fails
+      const platformData = await this.getPlatformData();
+      const analysis = this.analyzeUserQuery(query);
+      
+      switch (analysis.intent) {
+        case 'proposal_analysis':
+          return await this.generateProposalAnalysis(query, platformData, analysis);
+        case 'dao_analysis':
+          return await this.generateDAOAnalysis(query, platformData, analysis);
+        default:
+          return `I have access to ${platformData.proposals.length} proposals and ${platformData.daos.length} DAOs. However, I'm experiencing connectivity issues with the AI service. Please try rephrasing your question or ask about specific governance topics.`;
+      }
     }
   }
 
@@ -283,7 +283,7 @@ export class EthraKnowledgeService {
   }
 
   private async generateDAOAnalysis(query: string, data: PlatformData, analysis: any): Promise<string> {
-    const { daos, users } = data;
+    const { daos } = data;
     
     if (daos.length === 0) {
       return "I don't see any DAOs in the system currently. This might indicate the platform is new or there are data connectivity issues.";
@@ -308,128 +308,5 @@ export class EthraKnowledgeService {
     }
 
     return response;
-  }
-
-  private async generateTreasuryAnalysis(query: string, data: PlatformData, analysis: any): Promise<string> {
-    const { daos, proposals } = data;
-    
-    const treasuryProposals = proposals.filter(p => 
-      p.category?.toLowerCase().includes('treasury') || 
-      p.title?.toLowerCase().includes('treasury') ||
-      p.title?.toLowerCase().includes('funding')
-    );
-    
-    const totalTreasury = daos.reduce((sum, dao) => sum + parseFloat(dao.treasury_value || '0'), 0);
-    
-    let response = `Treasury Analysis:\n\n`;
-    response += `• Total ecosystem treasury: $${totalTreasury.toLocaleString()}\n`;
-    response += `• Treasury-related proposals: ${treasuryProposals.length}\n`;
-    
-    if (treasuryProposals.length > 0) {
-      const approvedTreasuryProposals = treasuryProposals.filter(p => p.status === 'passed');
-      response += `• Approved funding proposals: ${approvedTreasuryProposals.length}\n`;
-      
-      response += `\nRecent treasury proposals:\n`;
-      treasuryProposals.slice(0, 3).forEach(proposal => {
-        response += `• "${proposal.title}" - ${proposal.status}\n`;
-      });
-    }
-    
-    return response;
-  }
-
-  private generateGovernanceExplanation(query: string, analysis: any): string {
-    const concepts = analysis.entities.map(entity => 
-      this.knowledgeBase.concepts[entity]
-    ).filter(Boolean);
-    
-    if (concepts.length === 0) {
-      return "Governance in DAOs involves democratic decision-making through token-based voting, proposal systems, and community participation. Key elements include proposal creation, voting periods, quorum requirements, and execution mechanisms.";
-    }
-    
-    let response = "Here's what you need to know about DAO governance:\n\n";
-    analysis.entities.forEach(entity => {
-      if (this.knowledgeBase.concepts[entity]) {
-        response += `**${entity.charAt(0).toUpperCase() + entity.slice(1)}**: ${this.knowledgeBase.concepts[entity]}\n\n`;
-      }
-    });
-    
-    return response;
-  }
-
-  private generateEducationalResponse(query: string, analysis: any): string {
-    const lowerQuery = query.toLowerCase();
-    
-    if (lowerQuery.includes('voting mechanism')) {
-      return this.explainVotingMechanisms();
-    } else if (lowerQuery.includes('proposal process')) {
-      return this.explainProposalProcess();
-    } else if (lowerQuery.includes('best practice')) {
-      return this.explainBestPractices();
-    }
-    
-    // Default educational response
-    return "DAO governance involves several key concepts: token-based voting, proposal systems, treasury management, and community coordination. Would you like me to explain any specific aspect in detail?";
-  }
-
-  private explainVotingMechanisms(): string {
-    let response = "DAO Voting Mechanisms:\n\n";
-    
-    Object.entries(this.knowledgeBase.mechanisms.votingTypes).forEach(([type, description]) => {
-      response += `**${type.charAt(0).toUpperCase() + type.slice(1)}**: ${description}\n\n`;
-    });
-    
-    response += "The choice of voting mechanism depends on the DAO's goals, community size, and governance philosophy.";
-    return response;
-  }
-
-  private explainProposalProcess(): string {
-    let response = "Typical DAO Proposal Lifecycle:\n\n";
-    
-    this.knowledgeBase.commonPatterns.proposalLifecycle.forEach((step, index) => {
-      response += `${index + 1}. ${step}\n`;
-    });
-    
-    response += "\nThis process ensures community input and democratic decision-making while maintaining security and transparency.";
-    return response;
-  }
-
-  private explainBestPractices(): string {
-    let response = "DAO Governance Best Practices:\n\n";
-    
-    this.knowledgeBase.bestPractices.forEach((practice, index) => {
-      response += `• ${practice}\n`;
-    });
-    
-    return response;
-  }
-
-  private async generateComparison(query: string, data: PlatformData, analysis: any): Promise<string> {
-    // Implementation for comparison queries
-    return "Comparison analysis is being enhanced. Please specify what aspects you'd like to compare.";
-  }
-
-  private async generateAnalytics(query: string, data: PlatformData, analysis: any): Promise<string> {
-    const { proposals, daos, votes, ecosystemStats } = data;
-    
-    let response = "Platform Analytics:\n\n";
-    
-    if (ecosystemStats) {
-      response += `Current ecosystem metrics:\n`;
-      Object.entries(ecosystemStats).forEach(([key, value]) => {
-        response += `• ${key.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${value}\n`;
-      });
-    }
-    
-    response += `\nActivity Summary:\n`;
-    response += `• Total proposals: ${proposals.length}\n`;
-    response += `• Active DAOs: ${daos.length}\n`;
-    response += `• Community votes: ${votes.length}\n`;
-    
-    return response;
-  }
-
-  private generateGeneralResponse(query: string, data: PlatformData, analysis: any): string {
-    return `I'm here to help with DAO governance questions. I have access to current platform data including ${data.proposals.length} proposals and ${data.daos.length} DAOs. What specific aspect of governance would you like to explore?`;
   }
 }
