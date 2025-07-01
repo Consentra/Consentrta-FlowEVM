@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,60 +14,68 @@ import {
   TrendingUp,
   FileText,
   Lightbulb,
-  AlertCircle
+  AlertCircle,
+  Database,
+  Brain
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/utils/api';
 import { useToast } from '@/hooks/use-toast';
+import { EthraKnowledgeService } from '@/services/EthraKnowledgeService';
 
 interface Message {
   id: string;
   content: string;
   sender: 'user' | 'ai';
   timestamp: Date;
-  type?: 'analysis' | 'explanation' | 'suggestion' | 'error';
+  type?: 'analysis' | 'explanation' | 'suggestion' | 'error' | 'data-driven';
   data?: any;
+  confidence?: number;
 }
 
 export const AIChat: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      content: "Hello! I'm Ethra, your AI governance assistant. I have access to real-time DAO data, proposal analysis, and voting patterns. I can help you understand complex governance mechanisms, analyze specific proposals, and provide insights based on actual blockchain data. What would you like to explore?",
+      content: "Hello! I'm Ethra, your enhanced AI governance assistant. I now have access to real-time platform data, comprehensive governance knowledge, and advanced analysis capabilities. I can provide detailed insights about current proposals, DAO activities, voting patterns, and governance best practices. What would you like to explore?",
       sender: 'ai',
       timestamp: new Date(),
-      type: 'explanation'
+      type: 'explanation',
+      confidence: 95
     }
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [conversationContext, setConversationContext] = useState<any[]>([]);
+  const [knowledgeService] = useState(() => EthraKnowledgeService.getInstance());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Fetch real-time governance data
-  const { data: proposals } = useQuery({
-    queryKey: ['proposals'],
+  // Real-time data queries for enhanced context
+  const { data: proposals, isLoading: proposalsLoading } = useQuery({
+    queryKey: ['proposals-for-ethra'],
     queryFn: async () => {
-      const response = await apiClient.getProposals({ limit: 10 });
+      const response = await apiClient.getProposals({ limit: 50 });
       return response.success ? response.data : [];
-    }
+    },
+    refetchInterval: 2 * 60 * 1000, // Refresh every 2 minutes
   });
 
-  const { data: daos } = useQuery({
-    queryKey: ['daos'],
+  const { data: daos, isLoading: daosLoading } = useQuery({
+    queryKey: ['daos-for-ethra'],
     queryFn: async () => {
-      const response = await apiClient.getDAOs({ limit: 5 });
+      const response = await apiClient.getDAOs({ limit: 20 });
       return response.success ? response.data : [];
-    }
+    },
+    refetchInterval: 5 * 60 * 1000, // Refresh every 5 minutes
   });
 
   const { data: ecosystemStats } = useQuery({
-    queryKey: ['ecosystem-stats'],
+    queryKey: ['ecosystem-stats-for-ethra'],
     queryFn: async () => {
       const response = await apiClient.getEcosystemStats();
       return response.success ? response.data : null;
-    }
+    },
+    refetchInterval: 10 * 60 * 1000, // Refresh every 10 minutes
   });
 
   const scrollToBottom = () => {
@@ -93,194 +102,106 @@ export const AIChat: React.FC = () => {
     setIsTyping(true);
 
     try {
-      // Import the OpenRouter service dynamically
-      const { openRouterService } = await import('@/services/OpenRouterService');
+      console.log('Ethra processing query:', currentInput);
       
-      // Try to get real-time AI response using OpenRouter
-      const aiResponseContent = await openRouterService.analyzeGovernanceData(currentInput, {
-        proposals,
-        daos,
-        ecosystemStats,
-        conversationHistory: conversationContext.slice(-5)
-      });
+      // Get conversation history for context
+      const conversationHistory = messages.slice(-6).map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content,
+        timestamp: msg.timestamp
+      }));
 
-      const responseType = determineResponseType(currentInput);
+      // Use enhanced knowledge service
+      const aiResponseContent = await knowledgeService.generateResponse(
+        currentInput, 
+        conversationHistory
+      );
+
+      // Analyze query for response metadata
+      const queryAnalysis = knowledgeService.analyzeUserQuery(currentInput);
       
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: aiResponseContent,
         sender: 'ai',
         timestamp: new Date(),
-        type: responseType
+        type: queryAnalysis.complexity === 'simple' ? 'explanation' : 'analysis',
+        confidence: queryAnalysis.dataNeeded.length > 0 ? 90 : 75,
+        data: queryAnalysis.dataNeeded.length > 0 ? {
+          usedRealData: true,
+          dataTypes: queryAnalysis.dataNeeded,
+          queryComplexity: queryAnalysis.complexity
+        } : undefined
       };
       
       setMessages(prev => [...prev, aiMessage]);
-      
-      // Update conversation context
-      setConversationContext(prev => [
-        ...prev,
-        { user: currentInput, ai: aiResponseContent, timestamp: new Date() }
-      ].slice(-10));
 
       toast({
-        title: "Ethra Response",
-        description: "Real-time AI analysis complete",
+        title: "Enhanced Ethra Response",
+        description: `Response generated using ${queryAnalysis.dataNeeded.length > 0 ? 'real platform data' : 'governance knowledge base'}`,
       });
 
     } catch (error) {
-      console.error('Error getting OpenRouter AI response:', error);
+      console.error('Error getting enhanced AI response:', error);
       
-      // Fallback to enhanced local analysis
-      try {
-        const analysisResult = await generateEnhancedResponse(currentInput);
-        
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: analysisResult.content,
-          sender: 'ai',
-          timestamp: new Date(),
-          type: analysisResult.type,
-          data: analysisResult.data
-        };
-        
-        setMessages(prev => [...prev, aiMessage]);
-        
-        toast({
-          title: "Ethra Response",
-          description: "Using enhanced local analysis mode",
-          variant: "default",
-        });
-        
-      } catch (fallbackError) {
-        console.error('Fallback analysis failed:', fallbackError);
-        
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: "I'm experiencing technical difficulties. Please try asking your question again or rephrase it.",
-          sender: 'ai',
-          timestamp: new Date(),
-          type: 'error'
-        };
-        
-        setMessages(prev => [...prev, errorMessage]);
-        
-        toast({
-          title: "Connection Issue",
-          description: "Ethra is temporarily unavailable",
-          variant: "destructive",
-        });
-      }
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: "I apologize, but I'm experiencing technical difficulties processing your request. This might be due to data connectivity issues. Please try rephrasing your question or ask about a different topic.",
+        sender: 'ai',
+        timestamp: new Date(),
+        type: 'error',
+        confidence: 0
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+      
+      toast({
+        title: "Processing Error",
+        description: "Ethra encountered an issue. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsTyping(false);
     }
   };
 
-  const generateEnhancedResponse = async (input: string): Promise<{content: string, type: 'analysis' | 'explanation' | 'suggestion', data?: any}> => {
-    const lowercaseInput = input.toLowerCase();
-    
-    // Proposal analysis
-    if (lowercaseInput.includes('proposal') || lowercaseInput.includes('vote')) {
-      if (proposals && proposals.length > 0) {
-        const activeProposals = proposals.filter(p => p.status === 'active');
-        const totalVotes = proposals.reduce((sum, p) => sum + (p.totalVotes || 0), 0);
-        
-        return {
-          content: `Based on current data, I see ${proposals.length} total proposals with ${activeProposals.length} currently active. Total votes cast: ${totalVotes}. The most recent proposal "${proposals[0]?.title}" has ${proposals[0]?.votesFor || 0} votes for and ${proposals[0]?.votesAgainst || 0} against. Would you like me to analyze any specific proposal in detail?`,
-          type: 'analysis',
-          data: { proposals: activeProposals.slice(0, 3) }
-        };
-      }
-      return {
-        content: "I don't see any active proposals right now. This could mean the DAOs are in a quiet period, or there might be connectivity issues. Would you like me to explain how the proposal process typically works?",
-        type: 'explanation'
-      };
+  const getMessageIcon = (type?: string, confidence?: number) => {
+    if (confidence !== undefined && confidence < 50) {
+      return <AlertCircle className="h-4 w-4 text-red-500" />;
     }
     
-    // DAO governance analysis
-    if (lowercaseInput.includes('dao') || lowercaseInput.includes('governance')) {
-      if (daos && daos.length > 0) {
-        const totalMembers = daos.reduce((sum, dao) => sum + (dao.memberCount || 0), 0);
-        const totalTreasury = daos.reduce((sum, dao) => sum + parseFloat(dao.treasuryValue || '0'), 0);
-        
-        return {
-          content: `The ecosystem currently has ${daos.length} active DAOs with ${totalMembers} total members and approximately $${totalTreasury.toLocaleString()} in combined treasury value. The largest DAO "${daos[0]?.name}" has ${daos[0]?.memberCount || 0} members. Each DAO operates with different governance parameters - would you like me to explain how any specific DAO's governance works?`,
-          type: 'analysis',
-          data: { daos: daos.slice(0, 3) }
-        };
-      }
-      return {
-        content: "DAO governance systems vary significantly, but they typically include token-based voting, proposal mechanisms, and execution systems. The key is balancing efficiency with decentralization. Would you like me to explain any specific governance mechanism?",
-        type: 'explanation'
-      };
-    }
-    
-    // Voting power and tokenomics
-    if (lowercaseInput.includes('token') || lowercaseInput.includes('voting power')) {
-      return {
-        content: "Voting power distribution is crucial for DAO health. Most DAOs use token-weighted voting, but many implement safeguards like quadratic voting, delegation systems, or voting caps to prevent centralization. Some DAOs also use time-locked tokens or reputation systems. Would you like me to analyze the voting power distribution of any specific DAO?",
-        type: 'explanation'
-      };
-    }
-    
-    // Ecosystem statistics
-    if (lowercaseInput.includes('stat') || lowercaseInput.includes('metric') || lowercaseInput.includes('data')) {
-      if (ecosystemStats) {
-        return {
-          content: `Here are the latest ecosystem metrics: ${JSON.stringify(ecosystemStats, null, 2)}. These numbers show the overall health and activity of the governance ecosystem. Would you like me to dive deeper into any specific metric?`,
-          type: 'analysis',
-          data: ecosystemStats
-        };
-      }
-      return {
-        content: "I can help you understand governance metrics like participation rates, proposal success rates, voter turnout, and treasury utilization. What specific metrics are you interested in?",
-        type: 'suggestion'
-      };
-    }
-    
-    // Default intelligent response
-    return {
-      content: "I'm here to provide detailed governance analysis using real blockchain data. I can examine proposals, analyze voting patterns, explain DAO mechanisms, or help you understand the implications of governance decisions. What specific aspect of decentralized governance interests you most?",
-      type: 'suggestion'
-    };
-  };
-
-  const determineResponseType = (input: string): 'analysis' | 'explanation' | 'suggestion' => {
-    const lowercaseInput = input.toLowerCase();
-    if (lowercaseInput.includes('analyze') || lowercaseInput.includes('data') || lowercaseInput.includes('stat')) return 'analysis';
-    if (lowercaseInput.includes('how') || lowercaseInput.includes('what') || lowercaseInput.includes('explain')) return 'explanation';
-    return 'suggestion';
-  };
-
-  const getMessageIcon = (type?: string) => {
     switch (type) {
       case 'analysis': return <TrendingUp className="h-4 w-4 text-blue-500" />;
       case 'explanation': return <FileText className="h-4 w-4 text-green-500" />;
       case 'suggestion': return <Lightbulb className="h-4 w-4 text-yellow-500" />;
       case 'error': return <AlertCircle className="h-4 w-4 text-red-500" />;
-      default: return <MessageSquare className="h-4 w-4 text-primary" />;
+      case 'data-driven': return <Database className="h-4 w-4 text-purple-500" />;
+      default: return <Brain className="h-4 w-4 text-primary" />;
     }
   };
 
   const quickPrompts = [
     "Analyze current active proposals",
     "Show me DAO governance statistics", 
-    "Explain voting mechanisms",
-    "What are the latest governance trends?",
-    "How is treasury being utilized?",
-    "Compare proposal success rates"
+    "Explain quadratic voting mechanisms",
+    "What are governance best practices?",
+    "Compare proposal success rates",
+    "How does treasury management work?",
+    "Explain soulbound NFT identity system",
+    "What is AI-powered voting?"
   ];
 
-  const isEthraOnline = proposals !== undefined || daos !== undefined;
-  const isOpenRouterConnected = true; // We have the API key now
+  const isDataLoaded = !proposalsLoading && !daosLoading;
+  const dataStatus = isDataLoaded ? 'Connected' : 'Loading Data';
 
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex flex-col space-y-2">
         <h1 className="text-3xl md:text-4xl font-display font-bold bg-gradient-to-r from-primary via-logo-blue to-logo-blue-dark bg-clip-text text-transparent">
-          Ethra Assistant
+          Enhanced Ethra Assistant
         </h1>
         <p className="text-lg text-muted-foreground">
-          Your AI companion for real-time governance analysis and insights
+          AI governance expert with real-time data access and comprehensive knowledge
         </p>
       </div>
 
@@ -288,17 +209,17 @@ export const AIChat: React.FC = () => {
         <CardHeader className="ai-assistant-gradient text-white rounded-t-lg">
           <CardTitle className="flex items-center space-x-2">
             <div className="p-2 bg-white/20 rounded-lg">
-              <MessageSquare className="h-5 w-5" />
+              <Brain className="h-5 w-5" />
             </div>
             <div>
-              <span>Ethra Assistant</span>
-              <Badge variant="secondary" className={`ml-2 bg-white/20 text-white border-white/30 ${isOpenRouterConnected ? 'bg-green-500/20' : 'bg-yellow-500/20'}`}>
-                {isOpenRouterConnected ? 'AI Connected' : 'Limited Mode'}
+              <span>Enhanced Ethra Assistant</span>
+              <Badge variant="secondary" className={`ml-2 bg-white/20 text-white border-white/30 ${isDataLoaded ? 'bg-green-500/20' : 'bg-yellow-500/20'}`}>
+                {dataStatus}
               </Badge>
             </div>
           </CardTitle>
           <CardDescription className="text-white/80">
-            AI Governance Analyst - {isOpenRouterConnected ? 'Real-time AI responses enabled' : 'Operating with cached data'}
+            Enhanced AI Governance Expert - Real-time data • Comprehensive knowledge • Advanced analysis
           </CardDescription>
         </CardHeader>
 
@@ -311,7 +232,7 @@ export const AIChat: React.FC = () => {
                   className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-lg p-4 ${
+                    className={`max-w-[85%] rounded-lg p-4 ${
                       message.sender === 'user'
                         ? 'bg-primary text-primary-foreground ml-4'
                         : 'bg-muted mr-4'
@@ -329,21 +250,39 @@ export const AIChat: React.FC = () => {
                         </div>
                       )}
                       <div className="flex-1">
-                        {message.sender === 'ai' && message.type && (
-                          <div className="flex items-center space-x-1 mb-1">
-                            {getMessageIcon(message.type)}
-                            <span className="text-xs font-medium text-muted-foreground uppercase">
-                              {message.type}
-                            </span>
+                        {message.sender === 'ai' && (message.type || message.confidence !== undefined) && (
+                          <div className="flex items-center space-x-2 mb-2">
+                            {getMessageIcon(message.type, message.confidence)}
+                            <div className="flex items-center space-x-2">
+                              {message.type && (
+                                <span className="text-xs font-medium text-muted-foreground uppercase">
+                                  {message.type.replace('-', ' ')}
+                                </span>
+                              )}
+                              {message.confidence !== undefined && (
+                                <Badge variant="outline" className={`text-xs ${
+                                  message.confidence >= 80 ? 'border-green-500 text-green-600' :
+                                  message.confidence >= 60 ? 'border-yellow-500 text-yellow-600' :
+                                  'border-red-500 text-red-600'
+                                }`}>
+                                  {message.confidence}% confidence
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         )}
                         <p className="text-sm leading-relaxed whitespace-pre-line">{message.content}</p>
                         
-                        {/* Display additional data if available */}
-                        {message.data && message.sender === 'ai' && (
-                          <div className="mt-2 p-2 bg-background/50 rounded text-xs">
-                            <strong>Additional Data:</strong>
-                            <pre className="mt-1 overflow-auto">{JSON.stringify(message.data, null, 2)}</pre>
+                        {message.data?.usedRealData && (
+                          <div className="mt-2 p-2 bg-green-50 dark:bg-green-950/20 rounded text-xs border border-green-200 dark:border-green-800">
+                            <div className="flex items-center space-x-1 text-green-700 dark:text-green-400">
+                              <Database className="h-3 w-3" />
+                              <span className="font-medium">Real Platform Data Used</span>
+                            </div>
+                            <div className="mt-1 text-green-600 dark:text-green-500">
+                              Data sources: {message.data.dataTypes.join(', ')} • 
+                              Query complexity: {message.data.queryComplexity}
+                            </div>
                           </div>
                         )}
                         
@@ -363,10 +302,13 @@ export const AIChat: React.FC = () => {
                       <div className="p-1.5 bg-primary/10 rounded-full">
                         <Bot className="h-4 w-4 text-primary" />
                       </div>
-                      <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
-                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      <div className="flex items-center space-x-2">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                          <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                        </div>
+                        <span className="text-xs text-muted-foreground">Analyzing with real-time data...</span>
                       </div>
                     </div>
                   </div>
@@ -377,21 +319,44 @@ export const AIChat: React.FC = () => {
           </ScrollArea>
 
           <div className="p-6 border-t border-border">
-            {/* Quick Prompts */}
+            {/* Enhanced Quick Prompts */}
             <div className="mb-4">
-              <p className="text-sm text-muted-foreground mb-2">Suggested questions:</p>
-              <div className="flex flex-wrap gap-2">
+              <p className="text-sm text-muted-foreground mb-2 flex items-center">
+                <Sparkles className="h-4 w-4 mr-1" />
+                Try these enhanced questions:
+              </p>
+              <div className="grid grid-cols-2 gap-2">
                 {quickPrompts.map((prompt, index) => (
                   <Button
                     key={index}
                     variant="outline"
                     size="sm"
                     onClick={() => setInputValue(prompt)}
-                    className="text-xs"
+                    className="text-xs justify-start h-auto py-2 px-3"
                   >
                     {prompt}
                   </Button>
                 ))}
+              </div>
+            </div>
+
+            {/* Data Status Indicator */}
+            <div className="mb-4 p-2 bg-muted/50 rounded-lg">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center space-x-2">
+                  <Database className="h-3 w-3" />
+                  <span>Platform Data Status:</span>
+                </div>
+                <div className="flex items-center space-x-4">
+                  <span className={`flex items-center space-x-1 ${proposals ? 'text-green-600' : 'text-yellow-600'}`}>
+                    <div className={`w-2 h-2 rounded-full ${proposals ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                    <span>Proposals ({proposals?.length || 0})</span>
+                  </span>
+                  <span className={`flex items-center space-x-1 ${daos ? 'text-green-600' : 'text-yellow-600'}`}>
+                    <div className={`w-2 h-2 rounded-full ${daos ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                    <span>DAOs ({daos?.length || 0})</span>
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -400,7 +365,7 @@ export const AIChat: React.FC = () => {
               <Input
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Ask about proposals, governance metrics, or DAO analysis..."
+                placeholder="Ask about governance, proposals, DAOs, or any platform data..."
                 onKeyPress={(e) => e.key === 'Enter' && handleSend()}
                 className="flex-1"
               />
