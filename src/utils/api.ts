@@ -100,6 +100,26 @@ class APIClient {
     });
   }
 
+  // Votes - NEW METHOD
+  async getVotes(filters?: {
+    proposal_id?: string;
+    dao_id?: string;
+    user_id?: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<APIResponse<any[]>> {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined) {
+          params.append(key, value.toString());
+        }
+      });
+    }
+    
+    return this.request<any[]>(`/votes?${params}`);
+  }
+
   // User Profile
   async getUserProfile(address: string): Promise<APIResponse<UserProfile>> {
     return this.request<UserProfile>(`/users/${address}`);
