@@ -1,3 +1,4 @@
+
 import { apiClient } from '@/utils/api';
 import { openRouterService } from './OpenRouterService';
 
@@ -128,7 +129,7 @@ export class EthraKnowledgeService {
 
       // Extract user data from proposals and DAOs
       const users = [...new Set([
-        ...proposals.map(p => p.creator || p.creatorId).filter(Boolean),
+        ...proposals.map(p => p.creator).filter(Boolean),
         ...daos.map(d => d.creator).filter(Boolean)
       ])];
 
