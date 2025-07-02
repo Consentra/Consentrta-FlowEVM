@@ -94,6 +94,40 @@ export class BlockchainService {
     return this.aiOracleService;
   }
 
+  // Add the missing mintIdentityNFT method
+  async mintIdentityNFT(
+    userAddress: string,
+    verificationHash: string,
+    metadataURI: string
+  ): Promise<string> {
+    try {
+      if (!this.signer) {
+        throw new Error('Wallet not connected');
+      }
+
+      if (!CONTRACT_ADDRESSES.SOULBOUND_IDENTITY || CONTRACT_ADDRESSES.SOULBOUND_IDENTITY === "0x0000000000000000000000000000000000000000") {
+        console.warn('Soulbound Identity NFT contract address not configured, using mock transaction');
+        // Return a mock transaction hash for demo purposes
+        return '0x' + Math.random().toString(16).substr(2, 64);
+      }
+
+      const identityContract = getContractInstance(
+        CONTRACT_ADDRESSES.SOULBOUND_IDENTITY,
+        SOULBOUND_IDENTITY_ABI,
+        this.signer
+      );
+
+      const tx = await identityContract.mint(userAddress, verificationHash, metadataURI);
+      const receipt = await tx.wait();
+
+      console.log(`Identity NFT minted successfully. Transaction: ${receipt.hash}`);
+      return receipt.hash;
+    } catch (error: any) {
+      console.error('Failed to mint identity NFT:', error);
+      throw new Error(`Failed to mint identity NFT: ${error.message || 'Unknown error'}`);
+    }
+  }
+
   async submitAIAnalysis(
     proposalId: string,
     confidenceScore: number,
