@@ -1,4 +1,156 @@
 
+// ConsentraDAO ABI (placeholder - needs actual ABI)
+export const CONSENSTRA_DAO_ABI = [
+  // Basic Governor functions
+  {
+    "inputs": [
+      {"internalType": "address[]", "name": "targets", "type": "address[]"},
+      {"internalType": "uint256[]", "name": "values", "type": "uint256[]"},
+      {"internalType": "bytes[]", "name": "calldatas", "type": "bytes[]"},
+      {"internalType": "string", "name": "description", "type": "string"}
+    ],
+    "name": "propose",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "proposalId", "type": "uint256"},
+      {"internalType": "uint8", "name": "support", "type": "uint8"}
+    ],
+    "name": "castVote",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "proposalId", "type": "uint256"},
+      {"internalType": "uint8", "name": "support", "type": "uint8"},
+      {"internalType": "string", "name": "reason", "type": "string"}
+    ],
+    "name": "castVoteWithReason",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "proposalId", "type": "uint256"}
+    ],
+    "name": "proposalState",
+    "outputs": [{"internalType": "uint8", "name": "", "type": "uint8"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "proposalId", "type": "uint256"},
+      {"internalType": "address", "name": "account", "type": "address"}
+    ],
+    "name": "hasVoted",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "account", "type": "address"},
+      {"internalType": "uint256", "name": "blockNumber", "type": "uint256"}
+    ],
+    "name": "getVotes",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "proposalThreshold",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
+
+// AI Oracle ABI (placeholder - needs actual ABI)
+export const AI_ORACLE_ABI = [
+  {
+    "inputs": [
+      {"internalType": "string", "name": "proposalId", "type": "string"},
+      {"internalType": "uint256", "name": "confidenceScore", "type": "uint256"},
+      {"internalType": "string", "name": "predictedOutcome", "type": "string"},
+      {"internalType": "string", "name": "reasoning", "type": "string"}
+    ],
+    "name": "submitPrediction",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "string", "name": "proposalId", "type": "string"}
+    ],
+    "name": "getPrediction",
+    "outputs": [
+      {"internalType": "uint256", "name": "confidenceScore", "type": "uint256"},
+      {"internalType": "string", "name": "predictedOutcome", "type": "string"},
+      {"internalType": "string", "name": "reasoning", "type": "string"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
+
+// Soulbound Identity NFT ABI (placeholder - needs actual ABI)
+export const SOULBOUND_IDENTITY_ABI = [
+  {
+    "inputs": [
+      {"internalType": "address", "name": "to", "type": "address"},
+      {"internalType": "string", "name": "verificationHash", "type": "string"},
+      {"internalType": "string", "name": "metadataURI", "type": "string"}
+    ],
+    "name": "mint",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "account", "type": "address"}
+    ],
+    "name": "isVerified",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
+
+// DAO Factory ABI (placeholder - needs actual ABI)
+export const DAO_FACTORY_ABI = [
+  {
+    "inputs": [
+      {"internalType": "string", "name": "name", "type": "string"},
+      {"internalType": "string", "name": "tokenName", "type": "string"},
+      {"internalType": "string", "name": "tokenSymbol", "type": "string"},
+      {"internalType": "uint256", "name": "initialSupply", "type": "uint256"},
+      {"internalType": "uint256", "name": "votingDelay", "type": "uint256"},
+      {"internalType": "uint256", "name": "votingPeriod", "type": "uint256"},
+      {"internalType": "uint256", "name": "proposalThreshold", "type": "uint256"},
+      {"internalType": "uint256", "name": "quorumPercentage", "type": "uint256"},
+      {"internalType": "uint256", "name": "timelockDelay", "type": "uint256"}
+    ],
+    "name": "createDAO",
+    "outputs": [
+      {"internalType": "address", "name": "dao", "type": "address"},
+      {"internalType": "address", "name": "token", "type": "address"},
+      {"internalType": "address", "name": "timelock", "type": "address"}
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+];
+
 // DAO Integration Module ABI
 export const DAO_INTEGRATION_MODULE_ABI = [
   {
