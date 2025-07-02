@@ -4,6 +4,8 @@ import {
   AI_ORACLE_ABI, 
   SOULBOUND_IDENTITY_ABI, 
   DAO_FACTORY_ABI,
+  DAO_INTEGRATION_MODULE_ABI,
+  DAO_STORAGE_MODULE_ABI,
   CONTRACT_ADDRESSES,
   getContractInstance,
   voteToNumber,
@@ -11,6 +13,7 @@ import {
   isValidAddress
 } from './contractIntegration';
 import { AIOracleService } from '@/services/AIOracleService';
+import { DAOIntegrationService } from '@/services/DAOIntegrationService';
 
 export const FLOW_EVM_TESTNET = {
   chainId: '0x221', // 545 in hex
@@ -28,6 +31,7 @@ export class BlockchainService {
   private provider: ethers.BrowserProvider | null = null;
   private signer: ethers.Signer | null = null;
   private aiOracleService: AIOracleService | null = null;
+  private daoIntegrationService: DAOIntegrationService | null = null;
 
   async connect(): Promise<boolean> {
     if (typeof window.ethereum === 'undefined') {
@@ -39,8 +43,9 @@ export class BlockchainService {
       await this.provider.send('eth_requestAccounts', []);
       this.signer = await this.provider.getSigner();
       
-      // Initialize AIOracle service
+      // Initialize services
       this.aiOracleService = new AIOracleService(this.signer);
+      this.daoIntegrationService = new DAOIntegrationService(this.signer);
       
       await this.ensureCorrectNetwork();
       return true;
@@ -172,68 +177,14 @@ export class BlockchainService {
     }
   }
 
-  async submitVote(
-    daoAddress: string,
-    proposalId: string,
-    support: 0 | 1 | 2,
-    reason: string = '',
-    automated: boolean = false
-  ): Promise<string> {
-    try {
-      if (!this.signer) {
-        throw new Error('Wallet not connected');
-      }
-
-      if (!isValidAddress(daoAddress)) {
-        throw new Error('Invalid DAO address');
-      }
-
-      const daoContract = getContractInstance(daoAddress, CONSENSTRA_DAO_ABI, this.signer);
-      
-      // Check if user has already voted
-      const userAddress = await this.signer.getAddress();
-      const hasVoted = await daoContract.hasVoted(proposalId, userAddress);
-      if (hasVoted) {
-        throw new Error('You have already voted on this proposal');
-      }
-
-      // Check proposal state
-      const state = await daoContract.proposalState(proposalId);
-      if (state !== 1) { // 1 = Active
-        throw new Error('Proposal is not in active state');
-      }
-
-      // Cast vote
-      let tx;
-      if (reason || automated) {
-        try {
-          tx = await daoContract.castVoteWithReasonAndAutomation(proposalId, support, reason, automated);
-        } catch {
-          tx = await daoContract.castVoteWithReason(proposalId, support, reason || `Vote: ${support === 1 ? 'for' : support === 0 ? 'against' : 'abstain'}`);
-        }
-      } else {
-        tx = await daoContract.castVote(proposalId, support);
-      }
-
-      const receipt = await tx.wait();
-      console.log(`Vote cast successfully. Transaction: ${receipt.hash}`);
-      
-      return receipt.hash;
-    } catch (error: any) {
-      console.error('Failed to submit vote:', error);
-      
-      if (error.message?.includes('already voted')) {
-        throw new Error('You have already voted on this proposal');
-      } else if (error.message?.includes('not in active state')) {
-        throw new Error('Voting period has ended for this proposal');
-      } else if (error.message?.includes('insufficient')) {
-        throw new Error('Insufficient voting power to cast vote');
-      }
-      
-      throw new Error(`Failed to cast vote: ${error.message || 'Unknown error'}`);
+  getDAOIntegration(): DAOIntegrationService {
+    if (!this.daoIntegrationService) {
+      throw new Error('DAO Integration service not initialized. Connect wallet first.');
     }
+    return this.daoIntegrationService;
   }
 
+  // Enhanced proposal creation with metadata storage
   async createProposal(
     daoAddress: string,
     targets: string[],
@@ -265,30 +216,40 @@ export class BlockchainService {
         throw new Error('Insufficient voting power to create proposals');
       }
 
-      // Use enhanced proposal creation if metadata is provided
-      let tx;
+      // Create the proposal
+      const tx = await daoContract.propose(targets, values, calldatas, description);
+      const receipt = await tx.wait();
+      
+      // Store additional metadata if provided
       if (title && tags && aiConfidenceScore !== undefined) {
         try {
-          tx = await daoContract.proposeWithMetadata(
-            targets,
-            values,
-            calldatas,
-            description,
-            title,
-            tags,
-            aiConfidenceScore,
-            true // enableAIVoting
+          // Extract proposal ID from events
+          const proposalCreatedEvent = receipt.logs.find((log: any) => 
+            log.topics[0] === ethers.id("ProposalCreated(uint256,address,address[],uint256[],string[],string,uint256,uint256,string)")
           );
-        } catch {
-          tx = await daoContract.propose(targets, values, calldatas, description);
+          
+          if (proposalCreatedEvent) {
+            const decodedEvent = daoContract.interface.parseLog(proposalCreatedEvent);
+            const proposalId = decodedEvent.args.proposalId.toString();
+            
+            // Store metadata using integration module
+            await this.getDAOIntegration().storeProposalMetadata(
+              proposalId,
+              title,
+              description,
+              tags,
+              aiConfidenceScore,
+              userAddress,
+              true
+            );
+          }
+        } catch (metadataError) {
+          console.warn('Failed to store proposal metadata:', metadataError);
+          // Don't fail the whole operation if metadata storage fails
         }
-      } else {
-        tx = await daoContract.propose(targets, values, calldatas, description);
       }
 
-      const receipt = await tx.wait();
       console.log(`Proposal created successfully. Transaction: ${receipt.hash}`);
-      
       return receipt.hash;
     } catch (error: any) {
       console.error('Failed to create proposal:', error);
@@ -301,6 +262,88 @@ export class BlockchainService {
     }
   }
 
+  // Enhanced voting with metadata recording
+  async submitVote(
+    daoAddress: string,
+    proposalId: string,
+    support: 0 | 1 | 2,
+    reason: string = '',
+    automated: boolean = false
+  ): Promise<string> {
+    try {
+      if (!this.signer) {
+        throw new Error('Wallet not connected');
+      }
+
+      if (!isValidAddress(daoAddress)) {
+        throw new Error('Invalid DAO address');
+      }
+
+      const daoContract = getContractInstance(daoAddress, CONSENSTRA_DAO_ABI, this.signer);
+      
+      // Check if user has already voted
+      const userAddress = await this.signer.getAddress();
+      const hasVoted = await daoContract.hasVoted(proposalId, userAddress);
+      if (hasVoted) {
+        throw new Error('You have already voted on this proposal');
+      }
+
+      // Check proposal state
+      const state = await daoContract.proposalState(proposalId);
+      if (state !== 1) { // 1 = Active
+        throw new Error('Proposal is not in active state');
+      }
+
+      // Get voting power
+      const votingPower = await daoContract.getVotes(userAddress, await this.provider!.getBlockNumber() - 1);
+
+      // Cast vote
+      let tx;
+      if (reason || automated) {
+        try {
+          tx = await daoContract.castVoteWithReasonAndAutomation(proposalId, support, reason, automated);
+        } catch {
+          tx = await daoContract.castVoteWithReason(proposalId, support, reason || `Vote: ${support === 1 ? 'for' : support === 0 ? 'against' : 'abstain'}`);
+        }
+      } else {
+        tx = await daoContract.castVote(proposalId, support);
+      }
+
+      const receipt = await tx.wait();
+
+      // Record vote metadata
+      try {
+        await this.getDAOIntegration().recordVote(
+          userAddress,
+          proposalId,
+          support,
+          ethers.formatEther(votingPower),
+          reason || `Vote: ${support === 1 ? 'for' : support === 0 ? 'against' : 'abstain'}`,
+          automated
+        );
+      } catch (metadataError) {
+        console.warn('Failed to record vote metadata:', metadataError);
+        // Don't fail the whole operation if metadata recording fails
+      }
+
+      console.log(`Vote cast successfully. Transaction: ${receipt.hash}`);
+      return receipt.hash;
+    } catch (error: any) {
+      console.error('Failed to submit vote:', error);
+      
+      if (error.message?.includes('already voted')) {
+        throw new Error('You have already voted on this proposal');
+      } else if (error.message?.includes('not in active state')) {
+        throw new Error('Voting period has ended for this proposal');
+      } else if (error.message?.includes('insufficient')) {
+        throw new Error('Insufficient voting power to cast vote');
+      }
+      
+      throw new Error(`Failed to cast vote: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  // Enhanced DAO creation with storage module integration
   async createDAO(config: {
     name: string;
     tokenName: string;
@@ -317,13 +360,32 @@ export class BlockchainService {
         throw new Error('Wallet not connected');
       }
 
+      const userAddress = await this.signer.getAddress();
+
       if (!CONTRACT_ADDRESSES.DAO_FACTORY || CONTRACT_ADDRESSES.DAO_FACTORY === "0x0000000000000000000000000000000000000000") {
         console.warn('DAO Factory address not configured, using mock addresses');
-        return {
+        const mockAddresses = {
           dao: '0x' + Math.random().toString(16).substr(2, 40),
           token: '0x' + Math.random().toString(16).substr(2, 40),
           timelock: '0x' + Math.random().toString(16).substr(2, 40),
         };
+        
+        // Still try to store in storage module with incremented counter
+        try {
+          const daoCounter = await this.getDAOIntegration().getDAOCounter();
+          await this.getDAOIntegration().storeDAO(
+            daoCounter + 1,
+            mockAddresses.dao,
+            mockAddresses.token,
+            mockAddresses.timelock,
+            config.name,
+            userAddress
+          );
+        } catch (storageError) {
+          console.warn('Failed to store DAO in storage module:', storageError);
+        }
+        
+        return mockAddresses;
       }
 
       const factoryContract = getContractInstance(CONTRACT_ADDRESSES.DAO_FACTORY, DAO_FACTORY_ABI, this.signer);
@@ -348,11 +410,28 @@ export class BlockchainService {
       
       if (daoCreatedEvent) {
         const decodedEvent = factoryContract.interface.parseLog(daoCreatedEvent);
-        return {
+        const result = {
           dao: decodedEvent.args.dao,
           token: decodedEvent.args.token,
           timelock: decodedEvent.args.timelock
         };
+
+        // Store in storage module
+        try {
+          const daoCounter = await this.getDAOIntegration().getDAOCounter();
+          await this.getDAOIntegration().storeDAO(
+            daoCounter + 1,
+            result.dao,
+            result.token,
+            result.timelock,
+            config.name,
+            userAddress
+          );
+        } catch (storageError) {
+          console.warn('Failed to store DAO in storage module:', storageError);
+        }
+
+        return result;
       }
 
       throw new Error('DAO creation event not found');
@@ -362,29 +441,76 @@ export class BlockchainService {
     }
   }
 
-  async mintIdentityNFT(
-    userAddress: string,
-    verificationHash: string,
-    metadataURI: string
-  ): Promise<string> {
+  // New methods for DAO integration features
+  async executeAIVote(
+    proposalId: string,
+    voter: string,
+    category: string,
+    daoContract: string
+  ): Promise<{ support: number; reason: string }> {
     try {
-      if (!CONTRACT_ADDRESSES.SOULBOUND_IDENTITY || CONTRACT_ADDRESSES.SOULBOUND_IDENTITY === "0x0000000000000000000000000000000000000000") {
-        console.warn('Identity NFT contract address not configured, using mock');
-        return '0x' + Math.random().toString(16).substr(2, 64);
-      }
-
-      await this.connect();
-      const contract = await this.getContract(CONTRACT_ADDRESSES.SOULBOUND_IDENTITY, SOULBOUND_IDENTITY_ABI);
-      
-      const hashBytes32 = ethers.keccak256(ethers.toUtf8Bytes(verificationHash));
-      
-      const tx = await contract.mintIdentity(userAddress, hashBytes32, metadataURI);
-      const receipt = await tx.wait();
-      
-      return receipt.hash;
+      return await this.getDAOIntegration().executeAIVote(proposalId, voter, category, daoContract);
     } catch (error) {
-      console.error('Failed to mint identity NFT:', error);
-      return '0x' + Math.random().toString(16).substr(2, 64);
+      console.error('Failed to execute AI vote:', error);
+      throw error;
+    }
+  }
+
+  async getEnhancedProposalMetadata(proposalId: string): Promise<any> {
+    try {
+      return await this.getDAOIntegration().getProposalMetadata(proposalId);
+    } catch (error) {
+      console.error('Failed to get enhanced proposal metadata:', error);
+      return null;
+    }
+  }
+
+  async getUserStats(address: string): Promise<any> {
+    try {
+      return await this.getDAOIntegration().getUserStats(address);
+    } catch (error) {
+      console.error('Failed to get user stats:', error);
+      return null;
+    }
+  }
+
+  async getAllDAOs(offset: number = 0, limit: number = 50): Promise<any[]> {
+    try {
+      return await this.getDAOIntegration().getAllDAOs(offset, limit);
+    } catch (error) {
+      console.error('Failed to get all DAOs:', error);
+      return [];
+    }
+  }
+
+  async getUserDAOs(address: string): Promise<number[]> {
+    try {
+      return await this.getDAOIntegration().getUserDAOs(address);
+    } catch (error) {
+      console.error('Failed to get user DAOs:', error);
+      return [];
+    }
+  }
+
+  async checkDAOMembership(userAddress: string, daoId: number): Promise<boolean> {
+    try {
+      return await this.getDAOIntegration().checkMembership(userAddress, daoId);
+    } catch (error) {
+      console.error('Failed to check DAO membership:', error);
+      return false;
+    }
+  }
+
+  async joinDAO(daoId: number): Promise<string> {
+    try {
+      if (!this.signer) {
+        throw new Error('Wallet not connected');
+      }
+      const userAddress = await this.signer.getAddress();
+      return await this.getDAOIntegration().addMember(userAddress, daoId);
+    } catch (error) {
+      console.error('Failed to join DAO:', error);
+      throw error;
     }
   }
 
