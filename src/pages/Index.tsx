@@ -21,7 +21,8 @@ export const Index = () => {
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 relative">
               <img 
-                src="/lovable-uploads/cfc8144b-4936-4355-a021-7bc842b5ec32.png" 
+                src="consentra-uploads
+/cfc8144b-4936-4355-a021-7bc842b5ec32.png" 
                 alt="Consentra Logo" 
                 className="w-full h-full object-contain animate-bloom"
               />
@@ -412,7 +413,8 @@ export const Index = () => {
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
               <img 
-                src="/lovable-uploads/cfc8144b-4936-4355-a021-7bc842b5ec32.png" 
+                src="consentra-uploads
+/cfc8144b-4936-4355-a021-7bc842b5ec32.png" 
                 alt="Consentra" 
                 className="w-8 h-8"
               />
