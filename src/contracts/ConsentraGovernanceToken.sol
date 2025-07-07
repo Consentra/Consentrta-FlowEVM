@@ -2,23 +2,36 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20VotesUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /**
  * @title ConsentraGovernanceToken
- * @dev ERC20 governance token with voting capabilities
+ * @dev ERC20 governance token with voting capabilities - upgradeable version
  */
-contract ConsentraGovernanceToken is ERC20, ERC20Permit, ERC20Votes, Ownable {
+contract ConsentraGovernanceToken is 
+    Initializable,
+    ERC20Upgradeable, 
+    ERC20PermitUpgradeable, 
+    ERC20VotesUpgradeable, 
+    OwnableUpgradeable 
+{
     
-    constructor(address initialOwner) 
-        ERC20("Consentra Governance Token", "CGT")
-        ERC20Permit("Consentra Governance Token")
-        Ownable(initialOwner)
-    {
-        _mint(initialOwner, 1000000 * 10**decimals()); // 1M initial supply
+    function initialize(
+        string memory name,
+        string memory symbol,
+        address initialOwner,
+        uint256 initialSupply
+    ) external initializer {
+        __ERC20_init(name, symbol);
+        __ERC20Permit_init(name);
+        __ERC20Votes_init();
+        __Ownable_init(initialOwner);
+        
+        _mint(initialOwner, initialSupply * 10**decimals());
     }
     
     /**
@@ -31,7 +44,7 @@ contract ConsentraGovernanceToken is ERC20, ERC20Permit, ERC20Votes, Ownable {
     // Required overrides
     function _update(address from, address to, uint256 amount)
         internal
-        override(ERC20, ERC20Votes)
+        override(ERC20Upgradeable, ERC20VotesUpgradeable)
     {
         super._update(from, to, amount);
     }
@@ -39,7 +52,7 @@ contract ConsentraGovernanceToken is ERC20, ERC20Permit, ERC20Votes, Ownable {
     function nonces(address owner)
         public
         view
-        override(ERC20Permit, Nonces)
+        override(ERC20PermitUpgradeable, NoncesUpgradeable)
         returns (uint256)
     {
         return super.nonces(owner);
