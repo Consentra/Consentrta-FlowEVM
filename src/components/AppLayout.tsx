@@ -10,7 +10,7 @@ import { useBlockchain } from '@/hooks/useBlockchain';
 import { useAuth } from '@/hooks/useAuth';
 import { useIdentityVerification } from '@/hooks/useIdentityVerification';
 import { WalletAuth } from '@/components/WalletAuth';
-import { Moon, Sun, Monitor, LogOut } from 'lucide-react';
+import { Moon, Sun, Monitor, LogOut, Network } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +22,7 @@ import { Outlet, Navigate } from 'react-router-dom';
 
 export const AppLayout: React.FC = () => {
   const { theme, setTheme } = useTheme();
-  const { isConnected, isCorrectNetwork } = useBlockchain();
+  const { isConnected, isCorrectNetwork, currentNetwork } = useBlockchain();
   const { user, signOut, loading } = useAuth();
   const { isVerified } = useIdentityVerification();
 
@@ -61,6 +61,17 @@ export const AppLayout: React.FC = () => {
     await signOut();
   };
 
+  const getNetworkStatus = () => {
+    if (!isConnected) return 'Not Connected';
+    if (!isCorrectNetwork) return 'Unsupported Network';
+    return currentNetwork?.chainName || 'Connected';
+  };
+
+  const getNetworkColor = () => {
+    if (!isConnected || !isCorrectNetwork) return 'bg-orange-500';
+    return 'bg-green-500';
+  };
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
@@ -74,20 +85,22 @@ export const AppLayout: React.FC = () => {
                 <div className="hidden sm:flex items-center space-x-3">
                   <div className="flex items-center space-x-3">
                     <img 
-                      src="/consentra-uploads/cfc8144b-4936-4355-a021-7bc842b5ec32.png" 
+                      src="/lovable-uploads/cfc8144b-4936-4355-a021-7bc842b5ec32.png" 
                       alt="Consentra" 
                       className="w-8 h-8 animate-bloom"
                     />
                     <span className="font-display font-bold text-xl bg-gradient-to-r from-primary via-logo-blue to-logo-blue-dark bg-clip-text text-transparent">
                       Consentra
                     </span>
+                    <Badge variant="outline" className="text-xs px-2 py-1 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950 dark:to-purple-950 border-blue-200 dark:border-blue-800">
+                      <Network className="w-3 h-3 mr-1" />
+                      Multichain
+                    </Badge>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <div className={`w-2 h-2 rounded-full animate-pulse ${
-                      isConnected && isCorrectNetwork ? 'bg-green-500' : 'bg-orange-500'
-                    }`}></div>
+                    <div className={`w-2 h-2 rounded-full animate-pulse ${getNetworkColor()}`}></div>
                     <span className="text-sm text-muted-foreground">
-                      {isConnected && isCorrectNetwork ? 'Flow EVM Testnet' : 'Not Connected'}
+                      {getNetworkStatus()}
                     </span>
                   </div>
                   {isConnected && user && !isVerified && (
