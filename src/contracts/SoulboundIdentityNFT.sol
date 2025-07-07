@@ -14,7 +14,7 @@ contract SoulboundIdentityNFT is ERC721, Ownable {
     
     struct Identity {
         address wallet;
-        bytes32 verificationHash; // Hash of verification data
+        bytes32 verificationHash;
         uint256 timestamp;
         bool isVerified;
         string metadataURI;
@@ -36,12 +36,6 @@ contract SoulboundIdentityNFT is ERC721, Ownable {
     
     constructor() ERC721("Consenstra Identity", "CID") Ownable(msg.sender) {}
     
-    /**
-     * @dev Mint a new soulbound identity NFT
-     * @param to Address to mint the NFT to
-     * @param verificationHash Hash of the verification data
-     * @param metadataURI URI pointing to identity metadata
-     */
     function mintIdentity(
         address to,
         bytes32 verificationHash,
@@ -69,23 +63,14 @@ contract SoulboundIdentityNFT is ERC721, Ownable {
         return tokenId;
     }
     
-    /**
-     * @dev Update verification status (for admin use)
-     * @param user Address to update
-     * @param status New verification status
-     */
     function updateVerificationStatus(address user, bool status) external onlyOwner {
         uint256 tokenId = walletToTokenId[user];
-        require(tokenId != 0, "User not found");
+        require(tokenId != 0, "Not found");
         
         identities[tokenId].isVerified = status;
         emit VerificationStatusUpdated(user, status);
     }
     
-    /**
-     * @dev Revoke an identity (emergency function)
-     * @param user Address whose identity to revoke
-     */
     function revokeIdentity(address user) external onlyOwner {
         uint256 tokenId = walletToTokenId[user];
         if (tokenId == 0) revert NotVerified();
@@ -98,43 +83,25 @@ contract SoulboundIdentityNFT is ERC721, Ownable {
         emit IdentityRevoked(user, tokenId);
     }
     
-    /**
-     * @dev Check if an address has a verified identity
-     * @param wallet Address to check
-     * @return bool Whether the address is verified
-     */
     function isVerified(address wallet) external view returns (bool) {
         uint256 tokenId = walletToTokenId[wallet];
         return tokenId != 0 && identities[tokenId].isVerified && _ownerOf(tokenId) != address(0);
     }
     
-    /**
-     * @dev Get identity information for a wallet
-     * @param wallet Address to get identity for
-     * @return Identity struct
-     */
     function getIdentity(address wallet) external view returns (Identity memory) {
         uint256 tokenId = walletToTokenId[wallet];
         require(tokenId != 0, "Not verified");
         return identities[tokenId];
     }
     
-    /**
-     * @dev Override tokenURI to use custom metadata
-     */
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         if (_ownerOf(tokenId) == address(0)) revert TokenDoesNotExist();
         return identities[tokenId].metadataURI;
     }
     
-    /**
-     * @dev Override _update to prevent transfers (OpenZeppelin 5.x approach)
-     */
     function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
         address from = _ownerOf(tokenId);
         
-        // Allow minting (from == address(0)) and burning (to == address(0))
-        // but prevent transfers (from != address(0) && to != address(0))
         if (from != address(0) && to != address(0)) {
             revert SoulboundToken();
         }
@@ -142,30 +109,18 @@ contract SoulboundIdentityNFT is ERC721, Ownable {
         return super._update(to, tokenId, auth);
     }
     
-    /**
-     * @dev Override approve to prevent approvals
-     */
     function approve(address, uint256) public pure override {
         revert SoulboundToken();
     }
     
-    /**
-     * @dev Override setApprovalForAll to prevent approvals
-     */
     function setApprovalForAll(address, bool) public pure override {
         revert SoulboundToken();
     }
     
-    /**
-     * @dev Override getApproved to always return zero address
-     */
     function getApproved(uint256) public pure override returns (address) {
         return address(0);
     }
     
-    /**
-     * @dev Override isApprovedForAll to always return false
-     */
     function isApprovedForAll(address, address) public pure override returns (bool) {
         return false;
     }
