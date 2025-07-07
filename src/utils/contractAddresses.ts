@@ -1,0 +1,20 @@
+
+// Contract addresses for the minimal architecture
+export const MINIMAL_CONTRACT_ADDRESSES = {
+  // These will be updated after deployment
+  DAO_FACTORY: "0x0000000000000000000000000000000000000000",
+  SOULBOUND_IDENTITY: "0x0000000000000000000000000000000000000000",
+  
+  // Implementation contracts (for factory cloning)
+  DAO_IMPLEMENTATION: "0x0000000000000000000000000000000000000000",
+  GOVERNOR_IMPLEMENTATION: "0x0000000000000000000000000000000000000000",
+  TOKEN_IMPLEMENTATION: "0x0000000000000000000000000000000000000000",
+};
+
+export const CONTRACT_SIZES = {
+  MinimalGovernor: "~12KB",
+  MinimalDAO: "~8KB", 
+  DAOFactory: "~6KB",
+  ConsentraGovernanceToken: "~5KB",
+  SoulboundIdentityNFT: "~7KB"
+};
