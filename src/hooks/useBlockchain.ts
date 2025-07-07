@@ -3,6 +3,46 @@ import { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 import { useToast } from '@/hooks/use-toast';
 
+interface NetworkConfig {
+  chainId: number;
+  chainIdHex: string;
+  chainName: string;
+  nativeCurrency: {
+    name: string;
+    symbol: string;
+    decimals: number;
+  };
+  rpcUrls: string[];
+  blockExplorerUrls: string[];
+}
+
+const SUPPORTED_NETWORKS: Record<string, NetworkConfig> = {
+  flow: {
+    chainId: 545,
+    chainIdHex: '0x221',
+    chainName: 'Flow EVM Testnet',
+    nativeCurrency: {
+      name: 'Flow',
+      symbol: 'FLOW',
+      decimals: 18,
+    },
+    rpcUrls: ['https://testnet.evm.nodes.onflow.org'],
+    blockExplorerUrls: ['https://evm-testnet.flowscan.io'],
+  },
+  hyperion: {
+    chainId: 133717,
+    chainIdHex: '0x20a65',
+    chainName: 'Hyperion (Testnet)',
+    nativeCurrency: {
+      name: 'Metis',
+      symbol: 'tMETIS',
+      decimals: 18,
+    },
+    rpcUrls: ['https://hyperion-testnet.metisdevops.link'],
+    blockExplorerUrls: ['https://hyperion-testnet-explorer.metisdevops.link'],
+  },
+};
+
 interface BlockchainState {
   provider: ethers.BrowserProvider | null;
   signer: ethers.JsonRpcSigner | null;
@@ -10,6 +50,7 @@ interface BlockchainState {
   chainId: number | null;
   isConnected: boolean;
   isCorrectNetwork: boolean;
+  currentNetwork: NetworkConfig | null;
 }
 
 export const useBlockchain = () => {
@@ -20,11 +61,14 @@ export const useBlockchain = () => {
     chainId: null,
     isConnected: false,
     isCorrectNetwork: false,
+    currentNetwork: null,
   });
   
   const { toast } = useToast();
 
-  const FLOW_EVM_TESTNET_CHAIN_ID = 545; // Flow EVM Testnet
+  const getSupportedNetworkByChainId = (chainId: number): NetworkConfig | null => {
+    return Object.values(SUPPORTED_NETWORKS).find(network => network.chainId === chainId) || null;
+  };
 
   const checkConnection = useCallback(async () => {
     if (typeof window.ethereum !== 'undefined') {
@@ -36,14 +80,17 @@ export const useBlockchain = () => {
           const signer = await provider.getSigner();
           const network = await provider.getNetwork();
           const account = await signer.getAddress();
+          const chainId = Number(network.chainId);
+          const currentNetwork = getSupportedNetworkByChainId(chainId);
           
           setState({
             provider,
             signer,
             account,
-            chainId: Number(network.chainId),
+            chainId,
             isConnected: true,
-            isCorrectNetwork: Number(network.chainId) === FLOW_EVM_TESTNET_CHAIN_ID,
+            isCorrectNetwork: !!currentNetwork,
+            currentNetwork,
           });
         }
       } catch (error) {
@@ -77,11 +124,21 @@ export const useBlockchain = () => {
     }
   }, [checkConnection, toast]);
 
-  const switchToFlowEVM = useCallback(async () => {
+  const switchNetwork = useCallback(async (networkKey: string) => {
+    const network = SUPPORTED_NETWORKS[networkKey];
+    if (!network) {
+      toast({
+        title: "Network Not Found",
+        description: "The requested network is not supported",
+        variant: "destructive",
+      });
+      return false;
+    }
+
     try {
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
-        params: [{ chainId: `0x${FLOW_EVM_TESTNET_CHAIN_ID.toString(16)}` }],
+        params: [{ chainId: network.chainIdHex }],
       });
       await checkConnection();
       return true;
@@ -90,28 +147,29 @@ export const useBlockchain = () => {
         try {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: `0x${FLOW_EVM_TESTNET_CHAIN_ID.toString(16)}`,
-              chainName: 'Flow EVM Testnet',
-              nativeCurrency: {
-                name: 'Flow',
-                symbol: 'FLOW',
-                decimals: 18,
-              },
-              rpcUrls: ['https://testnet.evm.nodes.onflow.org'],
-              blockExplorerUrls: ['https://evm-testnet.flowscan.io'],
-            }],
+            params: [network],
           });
           await checkConnection();
           return true;
         } catch (addError) {
           console.error('Error adding network:', addError);
+          toast({
+            title: "Network Error",
+            description: `Failed to add ${network.chainName}`,
+            variant: "destructive",
+          });
           return false;
         }
       }
+      console.error('Error switching network:', switchError);
+      toast({
+        title: "Network Switch Failed",
+        description: `Failed to switch to ${network.chainName}`,
+        variant: "destructive",
+      });
       return false;
     }
-  }, [checkConnection]);
+  }, [checkConnection, toast]);
 
   const getContract = useCallback((address: string, abi: any[]) => {
     if (!state.signer) {
@@ -137,8 +195,9 @@ export const useBlockchain = () => {
   return {
     ...state,
     connectWallet,
-    switchToFlowEVM,
+    switchNetwork,
     getContract,
     refreshConnection: checkConnection,
+    supportedNetworks: SUPPORTED_NETWORKS,
   };
 };
