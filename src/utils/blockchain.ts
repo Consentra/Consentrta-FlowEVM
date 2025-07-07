@@ -15,23 +15,55 @@ import {
 import { AIOracleService } from '@/services/AIOracleService';
 import { DAOIntegrationService } from '@/services/DAOIntegrationService';
 
-export const FLOW_EVM_TESTNET = {
-  chainId: '0x221', // 545 in hex
-  chainName: 'Flow EVM Testnet',
+interface NetworkConfig {
+  chainId: number;
+  chainIdHex: string;
+  chainName: string;
   nativeCurrency: {
-    name: 'Flow',
-    symbol: 'FLOW',
-    decimals: 18,
+    name: string;
+    symbol: string;
+    decimals: number;
+  };
+  rpcUrls: string[];
+  blockExplorerUrls: string[];
+}
+
+export const SUPPORTED_NETWORKS: Record<string, NetworkConfig> = {
+  flow: {
+    chainId: 545,
+    chainIdHex: '0x221',
+    chainName: 'Flow EVM Testnet',
+    nativeCurrency: {
+      name: 'Flow',
+      symbol: 'FLOW',
+      decimals: 18,
+    },
+    rpcUrls: ['https://testnet.evm.nodes.onflow.org'],
+    blockExplorerUrls: ['https://evm-testnet.flowscan.io'],
   },
-  rpcUrls: ['https://testnet.evm.nodes.onflow.org'],
-  blockExplorerUrls: ['https://evm-testnet.flowscan.io'],
+  hyperion: {
+    chainId: 133717,
+    chainIdHex: '0x20a65',
+    chainName: 'Hyperion (Testnet)',
+    nativeCurrency: {
+      name: 'Metis',
+      symbol: 'tMETIS',
+      decimals: 18,
+    },
+    rpcUrls: ['https://hyperion-testnet.metisdevops.link'],
+    blockExplorerUrls: ['https://hyperion-testnet-explorer.metisdevops.link'],
+  },
 };
+
+// Legacy export for backward compatibility
+export const FLOW_EVM_TESTNET = SUPPORTED_NETWORKS.flow;
 
 export class BlockchainService {
   private provider: ethers.BrowserProvider | null = null;
   private signer: ethers.Signer | null = null;
   private aiOracleService: AIOracleService | null = null;
   private daoIntegrationService: DAOIntegrationService | null = null;
+  private currentNetwork: NetworkConfig | null = null;
 
   async connect(): Promise<boolean> {
     if (typeof window.ethereum === 'undefined') {
@@ -47,7 +79,7 @@ export class BlockchainService {
       this.aiOracleService = new AIOracleService(this.signer);
       this.daoIntegrationService = new DAOIntegrationService(this.signer);
       
-      await this.ensureCorrectNetwork();
+      await this.detectNetwork();
       return true;
     } catch (error) {
       console.error('Failed to connect to blockchain:', error);
@@ -55,29 +87,52 @@ export class BlockchainService {
     }
   }
 
-  async ensureCorrectNetwork(): Promise<void> {
+  async detectNetwork(): Promise<void> {
     if (!this.provider) throw new Error('Provider not connected');
 
     const network = await this.provider.getNetwork();
-    const expectedChainId = parseInt(FLOW_EVM_TESTNET.chainId, 16);
+    const chainId = Number(network.chainId);
+    
+    this.currentNetwork = Object.values(SUPPORTED_NETWORKS).find(
+      net => net.chainId === chainId
+    ) || null;
 
-    if (Number(network.chainId) !== expectedChainId) {
-      try {
+    if (!this.currentNetwork) {
+      console.warn(`Unsupported network detected: Chain ID ${chainId}`);
+    }
+  }
+
+  async switchToNetwork(networkKey: string): Promise<void> {
+    const network = SUPPORTED_NETWORKS[networkKey];
+    if (!network) {
+      throw new Error(`Network ${networkKey} not supported`);
+    }
+
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: network.chainIdHex }],
+      });
+    } catch (switchError: any) {
+      if (switchError.code === 4902) {
         await window.ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: FLOW_EVM_TESTNET.chainId }],
+          method: 'wallet_addEthereumChain',
+          params: [network],
         });
-      } catch (switchError: any) {
-        if (switchError.code === 4902) {
-          await window.ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [FLOW_EVM_TESTNET],
-          });
-        } else {
-          throw switchError;
-        }
+      } else {
+        throw switchError;
       }
     }
+    
+    await this.detectNetwork();
+  }
+
+  getCurrentNetwork(): NetworkConfig | null {
+    return this.currentNetwork;
+  }
+
+  isNetworkSupported(): boolean {
+    return !!this.currentNetwork;
   }
 
   async getContract(address: string, abi: any): Promise<ethers.Contract> {
@@ -94,7 +149,6 @@ export class BlockchainService {
     return this.aiOracleService;
   }
 
-  // Add the missing mintIdentityNFT method
   async mintIdentityNFT(
     userAddress: string,
     verificationHash: string,
@@ -107,7 +161,6 @@ export class BlockchainService {
 
       if (!CONTRACT_ADDRESSES.SOULBOUND_IDENTITY || CONTRACT_ADDRESSES.SOULBOUND_IDENTITY === "0x0000000000000000000000000000000000000000") {
         console.warn('Soulbound Identity NFT contract address not configured, using mock transaction');
-        // Return a mock transaction hash for demo purposes
         return '0x' + Math.random().toString(16).substr(2, 64);
       }
 
@@ -145,7 +198,6 @@ export class BlockchainService {
 
       const oracle = this.getAIOracle();
       
-      // Submit prediction
       const predictionTx = await oracle.submitPrediction(
         proposalId,
         confidenceScore,
@@ -153,7 +205,6 @@ export class BlockchainService {
         reasoning
       );
 
-      // Submit analysis if additional data provided
       if (summary && tags && complexityScore !== undefined && riskScore !== undefined) {
         const analysisTx = await oracle.submitAnalysis(
           proposalId,
@@ -218,7 +269,6 @@ export class BlockchainService {
     return this.daoIntegrationService;
   }
 
-  // Enhanced proposal creation with metadata storage
   async createProposal(
     daoAddress: string,
     targets: string[],
@@ -240,7 +290,6 @@ export class BlockchainService {
 
       const daoContract = getContractInstance(daoAddress, CONSENSTRA_DAO_ABI, this.signer);
       
-      // Check if user has enough voting power
       const userAddress = await this.signer.getAddress();
       const currentBlock = await this.provider!.getBlockNumber();
       const votingPower = await daoContract.getVotes(userAddress, currentBlock - 1);
@@ -250,14 +299,11 @@ export class BlockchainService {
         throw new Error('Insufficient voting power to create proposals');
       }
 
-      // Create the proposal
       const tx = await daoContract.propose(targets, values, calldatas, description);
       const receipt = await tx.wait();
       
-      // Store additional metadata if provided
       if (title && tags && aiConfidenceScore !== undefined) {
         try {
-          // Extract proposal ID from events
           const proposalCreatedEvent = receipt.logs.find((log: any) => 
             log.topics[0] === ethers.id("ProposalCreated(uint256,address,address[],uint256[],string[],string,uint256,uint256,string)")
           );
@@ -266,7 +312,6 @@ export class BlockchainService {
             const decodedEvent = daoContract.interface.parseLog(proposalCreatedEvent);
             const proposalId = decodedEvent.args.proposalId.toString();
             
-            // Store metadata using integration module
             await this.getDAOIntegration().storeProposalMetadata(
               proposalId,
               title,
@@ -279,7 +324,6 @@ export class BlockchainService {
           }
         } catch (metadataError) {
           console.warn('Failed to store proposal metadata:', metadataError);
-          // Don't fail the whole operation if metadata storage fails
         }
       }
 
@@ -296,7 +340,6 @@ export class BlockchainService {
     }
   }
 
-  // Enhanced voting with metadata recording
   async submitVote(
     daoAddress: string,
     proposalId: string,
@@ -315,23 +358,19 @@ export class BlockchainService {
 
       const daoContract = getContractInstance(daoAddress, CONSENSTRA_DAO_ABI, this.signer);
       
-      // Check if user has already voted
       const userAddress = await this.signer.getAddress();
       const hasVoted = await daoContract.hasVoted(proposalId, userAddress);
       if (hasVoted) {
         throw new Error('You have already voted on this proposal');
       }
 
-      // Check proposal state
       const state = await daoContract.proposalState(proposalId);
-      if (state !== 1) { // 1 = Active
+      if (state !== 1) {
         throw new Error('Proposal is not in active state');
       }
 
-      // Get voting power
       const votingPower = await daoContract.getVotes(userAddress, await this.provider!.getBlockNumber() - 1);
 
-      // Cast vote
       let tx;
       if (reason || automated) {
         try {
@@ -345,7 +384,6 @@ export class BlockchainService {
 
       const receipt = await tx.wait();
 
-      // Record vote metadata
       try {
         await this.getDAOIntegration().recordVote(
           userAddress,
@@ -357,7 +395,6 @@ export class BlockchainService {
         );
       } catch (metadataError) {
         console.warn('Failed to record vote metadata:', metadataError);
-        // Don't fail the whole operation if metadata recording fails
       }
 
       console.log(`Vote cast successfully. Transaction: ${receipt.hash}`);
@@ -377,7 +414,6 @@ export class BlockchainService {
     }
   }
 
-  // Enhanced DAO creation with storage module integration
   async createDAO(config: {
     name: string;
     tokenName: string;
@@ -404,7 +440,6 @@ export class BlockchainService {
           timelock: '0x' + Math.random().toString(16).substr(2, 40),
         };
         
-        // Still try to store in storage module with incremented counter
         try {
           const daoCounter = await this.getDAOIntegration().getDAOCounter();
           await this.getDAOIntegration().storeDAO(
@@ -450,7 +485,6 @@ export class BlockchainService {
           timelock: decodedEvent.args.timelock
         };
 
-        // Store in storage module
         try {
           const daoCounter = await this.getDAOIntegration().getDAOCounter();
           await this.getDAOIntegration().storeDAO(
@@ -475,7 +509,6 @@ export class BlockchainService {
     }
   }
 
-  // New methods for DAO integration features
   async executeAIVote(
     proposalId: string,
     voter: string,
@@ -593,5 +626,4 @@ export class BlockchainService {
 
 export const blockchainService = new BlockchainService();
 
-// Re-export contract addresses for backward compatibility
 export { CONTRACT_ADDRESSES };
