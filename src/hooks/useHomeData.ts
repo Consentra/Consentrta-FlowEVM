@@ -7,6 +7,7 @@ interface HomeStats {
   totalProposals: number;
   totalVotes: number;
   activeUsers: number;
+  supportedNetworks: number;
 }
 
 export const useHomeData = () => {
@@ -14,7 +15,8 @@ export const useHomeData = () => {
     totalDAOs: 0,
     totalProposals: 0,
     totalVotes: 0,
-    activeUsers: 0
+    activeUsers: 0,
+    supportedNetworks: 2 // Flow EVM + Hyperion
   });
   const [loading, setLoading] = useState(true);
 
@@ -46,7 +48,8 @@ export const useHomeData = () => {
         totalDAOs: daoCount || 0,
         totalProposals: proposalCount || 0,
         totalVotes: voteCount || 0,
-        activeUsers: userCount || 0
+        activeUsers: userCount || 0,
+        supportedNetworks: 2
       });
 
     } catch (error) {
