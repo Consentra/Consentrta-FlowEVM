@@ -1,10 +1,9 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useBlockchain } from '@/hooks/useBlockchain';
 import { useToast } from '@/hooks/use-toast';
-import { blockchainService } from '@/utils/blockchain';
+import { blockchainService } from '@/services/BlockchainService';
 
 interface DAO {
   id: string;
@@ -39,7 +38,6 @@ export const useDAOs = () => {
   const { isConnected, isCorrectNetwork } = useBlockchain();
   const { toast } = useToast();
 
-  // Compute userDAOs based on memberships
   const userDAOs = daos.filter(dao => 
     userMemberships.some(membership => membership.dao_id === dao.id)
   );
@@ -95,9 +93,6 @@ export const useDAOs = () => {
   const createDAO = async (daoData: {
     name: string;
     description: string;
-    token_address?: string;
-    governor_address?: string;
-    timelock_address?: string;
   }) => {
     if (!user?.address) {
       const error = new Error('Not authenticated');
@@ -113,7 +108,7 @@ export const useDAOs = () => {
       const error = new Error('Wallet not connected to correct network');
       toast({
         title: "Wallet Required",
-        description: "Please connect your wallet to Flow EVM Testnet",
+        description: "Please connect your wallet to a supported network",
         variant: "destructive",
       });
       return { error };
@@ -122,29 +117,23 @@ export const useDAOs = () => {
     try {
       setError(null);
       
-      // Create the DAO on blockchain first
-      let blockchainAddresses;
-      try {
-        blockchainAddresses = await blockchainService.createDAO({
-          name: daoData.name,
-          tokenName: `${daoData.name} Token`,
-          tokenSymbol: daoData.name.substring(0, 4).toUpperCase(),
-          initialSupply: "1000000",
-          votingDelay: "1",
-          votingPeriod: "7",
-          proposalThreshold: "1000",
-          quorumPercentage: "10",
-          timelockDelay: "172800" // 2 days
-        });
-      } catch (blockchainError) {
-        console.error('Blockchain deployment error:', blockchainError);
-        toast({
-          title: "Blockchain Error",
-          description: "Failed to deploy DAO to blockchain. Please try again.",
-          variant: "destructive",
-        });
-        return { error: blockchainError };
-      }
+      toast({
+        title: "Creating DAO On-Chain",
+        description: "Please confirm the transaction in your wallet...",
+      });
+
+      // Create the DAO on blockchain first - this will require wallet transaction
+      const blockchainResult = await blockchainService.createDAO({
+        name: daoData.name,
+        tokenName: `${daoData.name} Token`,
+        tokenSymbol: daoData.name.substring(0, 4).toUpperCase(),
+        initialSupply: "1000000",
+        votingDelay: "1",
+        votingPeriod: "7",
+        proposalThreshold: "1000",
+        quorumPercentage: "10",
+        timelockDelay: "172800"
+      });
 
       // Save to database with blockchain addresses
       const { data, error } = await supabase
@@ -152,20 +141,19 @@ export const useDAOs = () => {
         .insert({
           ...daoData,
           creator_id: user.address,
-          token_address: blockchainAddresses.token,
-          governor_address: blockchainAddresses.dao,
-          timelock_address: blockchainAddresses.timelock,
+          token_address: blockchainResult.token,
+          governor_address: blockchainResult.dao,
+          timelock_address: blockchainResult.timelock,
         })
         .select()
         .single();
 
       if (error) {
-        console.error('Database error creating DAO:', error);
         throw error;
       }
 
       // Add creator as admin member
-      const { error: membershipError } = await supabase
+      await supabase
         .from('dao_memberships')
         .insert({
           dao_id: data.id,
@@ -173,26 +161,18 @@ export const useDAOs = () => {
           role: 'admin'
         });
 
-      if (membershipError) {
-        console.error('Error creating admin membership:', membershipError);
-        // Don't fail the entire operation for this
-      }
-
       toast({
         title: "DAO Created Successfully",
-        description: "Your DAO has been deployed to Flow EVM Testnet",
+        description: `Your DAO has been deployed on-chain (${blockchainResult.txHash.slice(0, 10)}...)`,
       });
 
-      // Refresh data
       await Promise.all([fetchDAOs(), fetchUserMemberships()]);
-
       return { data, error: null };
     } catch (error: any) {
       console.error('Error creating DAO:', error);
-      setError('Failed to create DAO');
       toast({
         title: "Failed to Create DAO",
-        description: error.message || "Could not create the DAO. Please try again.",
+        description: error.message || "Could not create the DAO on-chain. Please try again.",
         variant: "destructive",
       });
       return { error };
@@ -210,8 +190,34 @@ export const useDAOs = () => {
       return { error };
     }
 
+    if (!isConnected || !isCorrectNetwork) {
+      const error = new Error('Wallet not connected');
+      toast({
+        title: "Wallet Required",
+        description: "Please connect your wallet to join DAOs on-chain",
+        variant: "destructive",
+      });
+      return { error };
+    }
+
     try {
       setError(null);
+
+      // Get DAO details
+      const dao = daos.find(d => d.id === daoId);
+      if (!dao?.governor_address) {
+        throw new Error('DAO not found or not deployed');
+      }
+
+      toast({
+        title: "Joining DAO On-Chain",
+        description: "Please confirm the transaction in your wallet...",
+      });
+
+      // Join DAO on-chain - this requires wallet transaction
+      const txHash = await blockchainService.joinDAO(dao.governor_address);
+
+      // Update database
       const { error } = await supabase
         .from('dao_memberships')
         .insert({
@@ -221,25 +227,21 @@ export const useDAOs = () => {
         });
 
       if (error) {
-        console.error('Database error joining DAO:', error);
         throw error;
       }
 
       toast({
         title: "Successfully Joined DAO",
-        description: "You are now a member of this DAO",
+        description: `You are now a member on-chain (${txHash.slice(0, 10)}...)`,
       });
 
-      // Refresh data
       await fetchUserMemberships();
-
       return { error: null };
     } catch (error: any) {
       console.error('Error joining DAO:', error);
-      setError('Failed to join DAO');
       toast({
         title: "Failed to Join DAO",
-        description: error.message || "Could not join the DAO. Please try again.",
+        description: error.message || "Could not join the DAO on-chain. Please try again.",
         variant: "destructive",
       });
       return { error };
@@ -323,9 +325,9 @@ export const useDAOs = () => {
     error,
     createDAO,
     joinDAO,
-    leaveDAO,
-    isUserMember,
-    getUserRole,
+    leaveDAO: async () => ({ error: new Error('Leave DAO not implemented for on-chain') }),
+    isUserMember: (daoId: string) => userMemberships.some(m => m.dao_id === daoId),
+    getUserRole: (daoId: string) => userMemberships.find(m => m.dao_id === daoId)?.role || null,
     refetch: async () => {
       await Promise.all([fetchDAOs(), fetchUserMemberships()]);
     }
