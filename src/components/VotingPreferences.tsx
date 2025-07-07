@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Brain, Plus, Trash2, Settings, CheckCircle, AlertCircle } from 'lucide-react';
+import { Bot, Plus, Trash2, Settings, CheckCircle, AlertCircle, Target, History } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { VotingPreference, AIVotingConfig } from '@/types/proposals';
 
@@ -18,9 +19,9 @@ export const VotingPreferences: React.FC = () => {
   const [confidenceThreshold, setConfidenceThreshold] = useState([75]);
   const [votingDelay, setVotingDelay] = useState([30]); // minutes
   const [preferences, setPreferences] = useState<VotingPreference[]>([
-    { id: '1', category: 'Treasury Allocation', stance: 'abstain', weight: 80 },
-    { id: '2', category: 'Parameter Changes', stance: 'for', weight: 70 },
-    { id: '3', category: 'Community Initiatives', stance: 'for', weight: 90 },
+    { id: '1', category: 'Treasury Management', stance: 'abstain', weight: 80 },
+    { id: '2', category: 'Protocol Upgrades', stance: 'for', weight: 70 },
+    { id: '3', category: 'Community Proposals', stance: 'for', weight: 90 },
     { id: '4', category: 'Security Updates', stance: 'for', weight: 95 },
   ]);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -36,11 +37,10 @@ export const VotingPreferences: React.FC = () => {
           const config: AIVotingConfig = JSON.parse(saved);
           setAutoVotingEnabled(config.autoVotingEnabled);
           setDaisyAutomation(config.daisyAutomation);
-          setConfidenceThreshold([config.confidenceThreshold]);
+          setConfidenceThreshold([config.minConfidenceThreshold]);
           setVotingDelay([config.votingDelay]);
           setPreferences(config.preferences);
           
-          // Set last saved time from localStorage
           const savedTime = localStorage.getItem('votingPreferences_lastSaved');
           if (savedTime) {
             setLastSaved(new Date(savedTime));
@@ -88,7 +88,6 @@ export const VotingPreferences: React.FC = () => {
   };
 
   const validatePreferences = (): boolean => {
-    // Check for empty categories
     const emptyCategories = preferences.filter(p => !p.category.trim());
     if (emptyCategories.length > 0) {
       toast({
@@ -99,7 +98,6 @@ export const VotingPreferences: React.FC = () => {
       return false;
     }
 
-    // Check for duplicate categories
     const categories = preferences.map(p => p.category.toLowerCase().trim());
     const duplicates = categories.filter((cat, index) => categories.indexOf(cat) !== index);
     if (duplicates.length > 0) {
@@ -123,9 +121,9 @@ export const VotingPreferences: React.FC = () => {
       const config: AIVotingConfig = {
         autoVotingEnabled,
         daisyAutomation,
-        confidenceThreshold: confidenceThreshold[0],
+        minConfidenceThreshold: confidenceThreshold[0],
         votingDelay: votingDelay[0],
-        preferences: preferences.filter(p => p.category.trim()) // Remove empty categories
+        preferences: preferences.filter(p => p.category.trim())
       };
 
       localStorage.setItem('votingPreferences', JSON.stringify(config));
@@ -134,8 +132,10 @@ export const VotingPreferences: React.FC = () => {
       setLastSaved(saveTime);
 
       toast({
-        title: "Preferences Saved",
-        description: "Your AI voting preferences have been configured successfully. Daisy will use these settings for automated voting.",
+        title: "Daisy Configuration Saved",
+        description: autoVotingEnabled 
+          ? "Daisy will now automatically vote based on your preferences and history."
+          : "Configuration saved. Enable automated voting to activate Daisy.",
       });
 
       // Trigger a custom event to notify other components
@@ -153,11 +153,11 @@ export const VotingPreferences: React.FC = () => {
   const getAutomationDescription = (level: string) => {
     switch (level) {
       case 'conservative':
-        return 'Only votes on proposals with high confidence (>85%). Minimal risk approach.';
+        return 'High confidence threshold (85%+). Minimal risk, fewer automated votes.';
       case 'aggressive':
-        return 'Votes more frequently with lower confidence thresholds. Higher activity.';
+        return 'Lower confidence threshold (60%+). More active voting, higher risk.';
       default:
-        return 'Balanced approach between safety and activity. Recommended for most users.';
+        return 'Balanced approach (75%+ confidence). Recommended for most users.';
     }
   };
 
@@ -170,18 +170,20 @@ export const VotingPreferences: React.FC = () => {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
-            <Brain className="mr-2 h-5 w-5" />
-            Daisy AI Configuration
+            <Bot className="mr-2 h-5 w-5" />
+            Daisy Automated Voting
           </CardTitle>
           <CardDescription>
-            Configure Daisy to vote automatically based on your preferences
+            Configure Daisy to automatically vote based on your preferences and voting history
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
             <div>
-              <p className="font-medium">Enable Automated Voting</p>
-              <p className="text-sm text-gray-500">Allow Daisy to cast votes automatically on your behalf</p>
+              <p className="font-medium">Enable Daisy Automation</p>
+              <p className="text-sm text-muted-foreground">
+                Allow Daisy to cast votes automatically on your behalf
+              </p>
             </div>
             <div className="flex items-center space-x-2">
               <Switch
@@ -195,10 +197,13 @@ export const VotingPreferences: React.FC = () => {
           {autoVotingEnabled && (
             <>
               <Separator />
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Automation Level</Label>
-                  <div className="flex space-x-2">
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <Label className="flex items-center">
+                    <Settings className="h-4 w-4 mr-2" />
+                    Automation Level
+                  </Label>
+                  <div className="grid grid-cols-3 gap-2">
                     {(['conservative', 'balanced', 'aggressive'] as const).map(level => (
                       <Button
                         key={level}
@@ -211,37 +216,41 @@ export const VotingPreferences: React.FC = () => {
                       </Button>
                     ))}
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     {getAutomationDescription(daisyAutomation)}
                   </p>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Confidence Threshold: {confidenceThreshold[0]}%</Label>
-                  <Slider
-                    value={confidenceThreshold}
-                    onValueChange={setConfidenceThreshold}
-                    max={95}
-                    min={50}
-                    step={5}
-                  />
-                  <p className="text-xs text-gray-500">
-                    Minimum AI confidence required before casting a vote
-                  </p>
-                </div>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label>Confidence Threshold: {confidenceThreshold[0]}%</Label>
+                    <Slider
+                      value={confidenceThreshold}
+                      onValueChange={setConfidenceThreshold}
+                      max={95}
+                      min={50}
+                      step={5}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Minimum confidence required before Daisy votes automatically
+                    </p>
+                  </div>
 
-                <div className="space-y-2">
-                  <Label>Voting Delay: {votingDelay[0]} minutes</Label>
-                  <Slider
-                    value={votingDelay}
-                    onValueChange={setVotingDelay}
-                    max={120}
-                    min={5}
-                    step={5}
-                  />
-                  <p className="text-xs text-gray-500">
-                    How long to wait before automatically voting after analysis
-                  </p>
+                  <div className="space-y-2">
+                    <Label>Voting Delay: {votingDelay[0]} minutes</Label>
+                    <Slider
+                      value={votingDelay}
+                      onValueChange={setVotingDelay}
+                      max={120}
+                      min={5}
+                      step={5}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Delay before Daisy executes the vote
+                    </p>
+                  </div>
                 </div>
               </div>
             </>
@@ -251,9 +260,12 @@ export const VotingPreferences: React.FC = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Voting Preferences by Category</CardTitle>
+          <CardTitle className="flex items-center">
+            <Target className="mr-2 h-4 w-4" />
+            Voting Preferences by Category
+          </CardTitle>
           <CardDescription>
-            Define how Daisy should vote on different types of proposals
+            Define how Daisy should vote on different types of proposals. If no preference is set for a category, Daisy will use your voting history.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -263,8 +275,8 @@ export const VotingPreferences: React.FC = () => {
                 <Input
                   value={pref.category}
                   onChange={(e) => handlePreferenceChange(index, 'category', e.target.value)}
-                  placeholder="e.g., Treasury Management, Security Updates"
-                  className="font-medium"
+                  placeholder="e.g., Treasury Management, Protocol Upgrades"
+                  className="font-medium flex-1 mr-2"
                 />
                 <Button
                   variant="ghost"
@@ -277,9 +289,9 @@ export const VotingPreferences: React.FC = () => {
                 </Button>
               </div>
               
-              <div className="flex items-center space-x-4">
-                <div className="space-y-1">
-                  <Label className="text-xs">Default Stance</Label>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm">Default Vote</Label>
                   <div className="flex space-x-1">
                     {(['for', 'against', 'abstain'] as const).map(stance => (
                       <Button
@@ -287,7 +299,7 @@ export const VotingPreferences: React.FC = () => {
                         variant={pref.stance === stance ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => handlePreferenceChange(index, 'stance', stance)}
-                        className="capitalize text-xs"
+                        className="capitalize text-xs flex-1"
                       >
                         {stance}
                       </Button>
@@ -295,15 +307,19 @@ export const VotingPreferences: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="flex-1 space-y-1">
-                  <Label className="text-xs">Confidence Weight: {pref.weight}%</Label>
+                <div className="space-y-2">
+                  <Label className="text-sm">Preference Strength: {pref.weight}%</Label>
                   <Slider
                     value={[pref.weight]}
                     onValueChange={([value]) => handlePreferenceChange(index, 'weight', value)}
                     max={100}
                     min={0}
                     step={5}
+                    className="w-full"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Higher values override AI recommendations more often
+                  </p>
                 </div>
               </div>
             </div>
@@ -313,6 +329,22 @@ export const VotingPreferences: React.FC = () => {
             <Plus className="mr-2 h-4 w-4" />
             Add Category Preference
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-muted/50">
+        <CardContent className="pt-6">
+          <div className="flex items-start space-x-3">
+            <History className="h-5 w-5 text-muted-foreground mt-0.5" />
+            <div>
+              <h4 className="font-medium">Voting History Fallback</h4>
+              <p className="text-sm text-muted-foreground mt-1">
+                When no preference is set for a proposal category, Daisy will analyze your past voting patterns 
+                for similar proposals and vote accordingly. If you have insufficient history, Daisy will notify 
+                you of the conflict and require manual decision.
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -327,8 +359,8 @@ export const VotingPreferences: React.FC = () => {
           disabled={!isConfigurationValid()}
           className="flex items-center space-x-2"
         >
-          <Settings className="h-4 w-4" />
-          <span>Save Configuration</span>
+          <Bot className="h-4 w-4" />
+          <span>Save Daisy Configuration</span>
         </Button>
       </div>
 
