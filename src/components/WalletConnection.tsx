@@ -1,9 +1,53 @@
+
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Wallet, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
+import { Wallet, CheckCircle, AlertCircle, ExternalLink, ChevronDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+interface NetworkConfig {
+  chainId: string;
+  chainName: string;
+  nativeCurrency: {
+    name: string;
+    symbol: string;
+    decimals: number;
+  };
+  rpcUrls: string[];
+  blockExplorerUrls: string[];
+}
+
+const SUPPORTED_NETWORKS: Record<string, NetworkConfig> = {
+  flow: {
+    chainId: '0x221', // 545 in hex
+    chainName: 'Flow EVM Testnet',
+    nativeCurrency: {
+      name: 'Flow',
+      symbol: 'FLOW',
+      decimals: 18,
+    },
+    rpcUrls: ['https://testnet.evm.nodes.onflow.org'],
+    blockExplorerUrls: ['https://evm-testnet.flowscan.io'],
+  },
+  hyperion: {
+    chainId: '0x20a65', // 133717 in hex
+    chainName: 'Hyperion (Testnet)',
+    nativeCurrency: {
+      name: 'Metis',
+      symbol: 'tMETIS',
+      decimals: 18,
+    },
+    rpcUrls: ['https://hyperion-testnet.metisdevops.link'],
+    blockExplorerUrls: ['https://hyperion-testnet-explorer.metisdevops.link'],
+  },
+};
 
 interface WalletConnectionProps {
   onConnect: (connected: boolean) => void;
@@ -17,20 +61,9 @@ export const WalletConnection = forwardRef<WalletConnectionRef, WalletConnection
   const [isConnected, setIsConnected] = useState(false);
   const [account, setAccount] = useState<string | null>(null);
   const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
+  const [currentNetwork, setCurrentNetwork] = useState<NetworkConfig | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const { toast } = useToast();
-
-  const FLOW_EVM_TESTNET = {
-    chainId: '0x221', // 545 in hex
-    chainName: 'Flow EVM Testnet',
-    nativeCurrency: {
-      name: 'Flow',
-      symbol: 'FLOW',
-      decimals: 18,
-    },
-    rpcUrls: ['https://testnet.evm.nodes.onflow.org'],
-    blockExplorerUrls: ['https://evm-testnet.flowscan.io'],
-  };
 
   useEffect(() => {
     checkConnection();
@@ -55,43 +88,48 @@ export const WalletConnection = forwardRef<WalletConnectionRef, WalletConnection
   const checkNetwork = async () => {
     try {
       const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-      const isCorrect = chainId === FLOW_EVM_TESTNET.chainId;
-      setIsCorrectNetwork(isCorrect);
-      return isCorrect;
+      const network = Object.values(SUPPORTED_NETWORKS).find(net => net.chainId === chainId);
+      
+      setCurrentNetwork(network || null);
+      setIsCorrectNetwork(!!network);
+      return !!network;
     } catch (error) {
       console.error('Error checking network:', error);
       return false;
     }
   };
 
-  const switchToFlowEVM = async () => {
+  const switchToNetwork = async (networkKey: string) => {
+    const network = SUPPORTED_NETWORKS[networkKey];
+    if (!network) return;
+
     try {
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
-        params: [{ chainId: FLOW_EVM_TESTNET.chainId }],
+        params: [{ chainId: network.chainId }],
       });
-      setIsCorrectNetwork(true);
+      await checkNetwork();
       toast({
         title: "Network Switched",
-        description: "Successfully connected to Flow EVM Testnet",
+        description: `Successfully connected to ${network.chainName}`,
       });
     } catch (switchError: any) {
       if (switchError.code === 4902) {
         try {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
-            params: [FLOW_EVM_TESTNET],
+            params: [network],
           });
-          setIsCorrectNetwork(true);
+          await checkNetwork();
           toast({
             title: "Network Added",
-            description: "Flow EVM Testnet added and connected",
+            description: `${network.chainName} added and connected`,
           });
         } catch (addError) {
           console.error('Error adding network:', addError);
           toast({
             title: "Network Error",
-            description: "Failed to add Flow EVM Testnet",
+            description: `Failed to add ${network.chainName}`,
             variant: "destructive",
           });
         }
@@ -122,7 +160,7 @@ export const WalletConnection = forwardRef<WalletConnectionRef, WalletConnection
         
         const networkCorrect = await checkNetwork();
         if (!networkCorrect) {
-          await switchToFlowEVM();
+          // Don't auto-switch, let user choose
         }
         
         toast({
@@ -146,6 +184,7 @@ export const WalletConnection = forwardRef<WalletConnectionRef, WalletConnection
     setAccount(null);
     setIsConnected(false);
     setIsCorrectNetwork(false);
+    setCurrentNetwork(null);
     onConnect(false);
     toast({
       title: "Wallet Disconnected",
@@ -153,7 +192,6 @@ export const WalletConnection = forwardRef<WalletConnectionRef, WalletConnection
     });
   };
 
-  // Expose the connectWallet function through the ref
   useImperativeHandle(ref, () => ({
     handleConnect: connectWallet
   }));
@@ -175,15 +213,35 @@ export const WalletConnection = forwardRef<WalletConnectionRef, WalletConnection
   return (
     <div className="flex items-center space-x-2">
       {!isCorrectNetwork && (
-        <Button
-          onClick={switchToFlowEVM}
-          variant="outline"
-          size="sm"
-          className="text-orange-600 border-orange-200 hover:bg-orange-50 text-xs px-2"
-        >
-          <AlertCircle className="mr-1 h-3 w-3" />
-          Switch Network
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-orange-600 border-orange-200 hover:bg-orange-50 text-xs px-2"
+            >
+              <AlertCircle className="mr-1 h-3 w-3" />
+              Switch Network
+              <ChevronDown className="ml-1 h-2 w-2" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {Object.entries(SUPPORTED_NETWORKS).map(([key, network]) => (
+              <DropdownMenuItem
+                key={key}
+                onClick={() => switchToNetwork(key)}
+                className="cursor-pointer"
+              >
+                <div className="flex flex-col">
+                  <span className="font-medium">{network.chainName}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {network.nativeCurrency.symbol}
+                  </span>
+                </div>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
       
       <div className="flex items-center space-x-2 px-2 py-1 bg-card border border-border rounded-md">
@@ -196,6 +254,11 @@ export const WalletConnection = forwardRef<WalletConnectionRef, WalletConnection
           <span className="text-xs text-muted-foreground font-mono">
             {account?.slice(0, 4)}...{account?.slice(-4)}
           </span>
+          {currentNetwork && (
+            <Badge variant="outline" className="text-xs px-1 py-0">
+              {currentNetwork.nativeCurrency.symbol}
+            </Badge>
+          )}
         </div>
         <Button
           onClick={disconnectWallet}
