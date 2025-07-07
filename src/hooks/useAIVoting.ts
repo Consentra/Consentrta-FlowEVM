@@ -2,77 +2,30 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useBlockchain } from './useBlockchain';
 import { useToast } from '@/hooks/use-toast';
-import { AIVotingService } from '@/services/AIVotingService';
-import { apiClient } from '@/utils/apiClient';
-import { ethers } from 'ethers';
+import { supabase } from '@/integrations/supabase/client';
 import { VotingPreference, AIVotingConfig, ProposalForVoting } from '@/types/proposals';
 
 export const useAIVoting = () => {
   const [config, setConfig] = useState<AIVotingConfig | null>(null);
   const [activeVotingTasks, setActiveVotingTasks] = useState<Set<string>>(new Set());
   const [isConfigSynced, setIsConfigSynced] = useState(false);
-  const { getContract, isConnected, account, provider, signer } = useBlockchain();
+  const { isConnected, account } = useBlockchain();
   const { toast } = useToast();
-  const votingServiceRef = useRef<AIVotingService | null>(null);
 
-  // Initialize voting service when blockchain is connected
+  // Load configuration from backend and localStorage
   useEffect(() => {
-    if (isConnected && provider && signer && account) {
-      try {
-        const daoAddress = '0x0000000000000000000000000000000000000000'; // Replace with actual DAO address
-        const daoABI = [
-          "function castVoteWithReasonAndAutomation(uint256 proposalId, uint8 support, string reason, bool automated) returns (uint256)",
-          "function scheduleAIVote(uint256 proposalId, address voter, string category)",
-          "function executeAIVote(uint256 proposalId, address voter, string category)",
-          "function configureAIVoting(bool enabled, uint256 minConfidenceThreshold, uint256 votingDelay)",
-          "function setCategoryPreference(string category, uint8 preference)",
-          "function getUserAIConfig(address user) view returns (bool enabled, uint256 minConfidenceThreshold, uint256 votingDelay)",
-          "function getScheduledAIVote(uint256 proposalId, address voter) view returns (uint256)",
-          "function aiVotesCast(uint256 proposalId, address voter) view returns (bool)"
-        ];
-        
-        const daoContract = new ethers.Contract(daoAddress, daoABI, signer);
-        votingServiceRef.current = new AIVotingService(provider, signer, daoContract);
-        
-        console.log('AI Voting Service initialized with blockchain connection');
-        
-        // Load blockchain config
-        loadBlockchainConfig();
-        
-      } catch (error) {
-        console.error('Failed to initialize AI Voting Service:', error);
-        toast({
-          title: "Connection Error",
-          description: "Failed to connect to blockchain voting system",
-          variant: "destructive",
-        });
-      }
-    } else {
-      // Cleanup service when disconnected
-      if (votingServiceRef.current) {
-        votingServiceRef.current.shutdown();
-        votingServiceRef.current = null;
-      }
-      setIsConfigSynced(false);
-    }
-
-    return () => {
-      if (votingServiceRef.current) {
-        votingServiceRef.current.shutdown();
-      }
-    };
-  }, [isConnected, provider, signer, account]);
-
-  // Load configuration from localStorage and backend
-  useEffect(() => {
-    const loadLocalConfig = async () => {
-      // Try to load from backend first
+    const loadConfig = async () => {
       if (account) {
         try {
-          const backendConfig = await apiClient.getAIVotingConfig(account);
-          if (backendConfig) {
-            setConfig(backendConfig);
-            localStorage.setItem('votingPreferences', JSON.stringify(backendConfig));
+          // Try to load from backend first
+          const response = await supabase.functions.invoke('daisy-config', {
+            body: { userAddress: account }
+          });
+
+          if (response.data && !response.error) {
+            setConfig(response.data);
+            localStorage.setItem('votingPreferences', JSON.stringify(response.data));
+            setIsConfigSynced(true);
             return;
           }
         } catch (error) {
@@ -92,98 +45,94 @@ export const useAIVoting = () => {
       }
     };
 
-    loadLocalConfig();
+    loadConfig();
   }, [account]);
 
-  const loadBlockchainConfig = async () => {
-    if (!votingServiceRef.current || !account) return;
+  const updateConfig = useCallback(async (newConfig: AIVotingConfig) => {
+    setConfig(newConfig);
+    localStorage.setItem('votingPreferences', JSON.stringify(newConfig));
+    
+    // Save to backend if user is connected
+    if (account) {
+      try {
+        const response = await supabase.functions.invoke('daisy-config', {
+          body: { 
+            ...newConfig, 
+            userAddress: account 
+          }
+        });
 
-    try {
-      const blockchainConfig = await votingServiceRef.current.getBlockchainConfig(account);
-      if (blockchainConfig) {
-        console.log('Loaded blockchain config:', blockchainConfig);
+        if (response.error) {
+          throw new Error(response.error.message);
+        }
+
         setIsConfigSynced(true);
+        toast({
+          title: "Configuration Saved",
+          description: "Daisy configuration has been saved successfully.",
+        });
+      } catch (error) {
+        console.error('Failed to save config to backend:', error);
+        toast({
+          title: "Save Warning",
+          description: "Configuration saved locally but failed to sync with backend.",
+          variant: "destructive",
+        });
+        setIsConfigSynced(false);
       }
-    } catch (error) {
-      console.error('Failed to load blockchain config:', error);
-      setIsConfigSynced(false);
-    }
-  };
-
-  const syncConfigWithBlockchain = useCallback(async (newConfig: AIVotingConfig) => {
-    if (!votingServiceRef.current || !account) {
-      toast({
-        title: "Connection Required",
-        description: "Please connect your wallet to sync configuration",
-        variant: "destructive",
-      });
-      return false;
-    }
-
-    try {
-      await votingServiceRef.current.syncConfigWithBlockchain(newConfig, account);
-      setIsConfigSynced(true);
-      toast({
-        title: "Configuration Synced",
-        description: "AI voting preferences saved to blockchain and backend",
-      });
-      return true;
-    } catch (error) {
-      console.error('Failed to sync config:', error);
-      toast({
-        title: "Sync Failed",
-        description: "Failed to save configuration to blockchain",
-        variant: "destructive",
-      });
-      setIsConfigSynced(false);
-      return false;
     }
   }, [account, toast]);
 
-  // Listen for AI vote events
+  // Monitor for new proposals and process them with Daisy
   useEffect(() => {
-    const handleVoteCast = (event: CustomEvent) => {
-      const { proposalId, vote, transactionHash } = event.detail;
-      toast({
-        title: "AI Vote Cast Successfully",
-        description: `Daisy voted "${vote}" on proposal ${proposalId}`,
-      });
-      
-      // Remove from active tasks
-      setActiveVotingTasks(prev => {
-        const next = new Set(prev);
-        next.delete(proposalId);
-        return next;
-      });
-    };
+    if (!config?.autoVotingEnabled || !account) {
+      return;
+    }
 
-    const handleVoteError = (event: CustomEvent) => {
-      const { proposalId, error } = event.detail;
-      toast({
-        title: "AI Vote Failed",
-        description: `Failed to vote on proposal ${proposalId}: ${error}`,
-        variant: "destructive",
-      });
-      
-      // Remove from active tasks
-      setActiveVotingTasks(prev => {
-        const next = new Set(prev);
-        next.delete(proposalId);
-        return next;
-      });
-    };
+    // Subscribe to new proposals
+    const channel = supabase
+      .channel('daisy-proposals')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'proposals'
+        },
+        async (payload) => {
+          const newProposal = payload.new as any;
+          
+          // Convert to ProposalForVoting format
+          const proposalForVoting: ProposalForVoting = {
+            id: newProposal.id,
+            title: newProposal.title,
+            description: newProposal.description || '',
+            category: newProposal.category || 'general',
+            dao_id: newProposal.dao_id,
+            blockchain_proposal_id: newProposal.blockchain_proposal_id,
+            deadline: new Date(newProposal.deadline || Date.now() + 7 * 24 * 60 * 60 * 1000)
+          };
 
-    window.addEventListener('ai-vote-cast', handleVoteCast as EventListener);
-    window.addEventListener('ai-vote-error', handleVoteError as EventListener);
+          console.log('New proposal detected, processing with Daisy:', proposalForVoting.id);
+          
+          // Add to active tasks
+          setActiveVotingTasks(prev => new Set([...prev, proposalForVoting.id]));
+          
+          // Process with Daisy (this would trigger the DaisyVotingEngine)
+          window.dispatchEvent(new CustomEvent('daisy-process-proposal', {
+            detail: proposalForVoting
+          }));
+        }
+      )
+      .subscribe();
 
     return () => {
-      window.removeEventListener('ai-vote-cast', handleVoteCast as EventListener);
-      window.removeEventListener('ai-vote-error', handleVoteError as EventListener);
+      supabase.removeChannel(channel);
     };
-  }, [toast]);
+  }, [config?.autoVotingEnabled, account]);
 
   const scheduleVote = useCallback(async (proposal: ProposalForVoting) => {
-    if (!config?.autoVotingEnabled || !isConnected || !votingServiceRef.current || !account) {
+    if (!config?.autoVotingEnabled || !isConnected || !account) {
       return;
     }
 
@@ -192,67 +141,39 @@ export const useAIVoting = () => {
     }
 
     try {
-      const success = await votingServiceRef.current.scheduleAutomaticVote(
-        proposal,
-        config,
-        account
-      );
+      setActiveVotingTasks(prev => new Set([...prev, proposal.id]));
+      
+      toast({
+        title: "Vote Scheduled",
+        description: `Daisy will analyze and vote on "${proposal.title}" in ${config.votingDelay} minutes`,
+      });
 
-      if (success) {
-        setActiveVotingTasks(prev => new Set([...prev, proposal.id]));
-        
-        toast({
-          title: "Vote Scheduled",
-          description: `Daisy will analyze and vote on "${proposal.title}" in ${config.votingDelay} minutes`,
-        });
-      }
+      // Trigger Daisy processing
+      window.dispatchEvent(new CustomEvent('daisy-process-proposal', {
+        detail: proposal
+      }));
     } catch (error) {
       console.error('Failed to schedule vote:', error);
       toast({
         title: "Scheduling Failed",
-        description: "Failed to schedule automatic vote on blockchain",
+        description: "Failed to schedule automatic vote",
         variant: "destructive",
       });
     }
   }, [config, isConnected, account, activeVotingTasks, toast]);
 
   const cancelScheduledVote = useCallback((proposalId: string) => {
-    if (votingServiceRef.current) {
-      const cancelled = votingServiceRef.current.cancelScheduledVote(proposalId);
-      
-      if (cancelled) {
-        setActiveVotingTasks(prev => {
-          const next = new Set(prev);
-          next.delete(proposalId);
-          return next;
-        });
-        
-        toast({
-          title: "Scheduled Vote Cancelled",
-          description: "The automated vote has been cancelled",
-        });
-      }
-    }
+    setActiveVotingTasks(prev => {
+      const next = new Set(prev);
+      next.delete(proposalId);
+      return next;
+    });
+    
+    toast({
+      title: "Scheduled Vote Cancelled",
+      description: "The automated vote has been cancelled",
+    });
   }, [toast]);
-
-  const updateConfig = useCallback(async (newConfig: AIVotingConfig) => {
-    setConfig(newConfig);
-    localStorage.setItem('votingPreferences', JSON.stringify(newConfig));
-    
-    // Save to backend
-    if (account) {
-      try {
-        await apiClient.saveAIVotingConfig(newConfig);
-      } catch (error) {
-        console.warn('Failed to save config to backend:', error);
-      }
-    }
-    
-    // Trigger sync if connected
-    if (isConnected && account) {
-      syncConfigWithBlockchain(newConfig);
-    }
-  }, [isConnected, account, syncConfigWithBlockchain]);
 
   return {
     config,
@@ -261,8 +182,6 @@ export const useAIVoting = () => {
     scheduleVote,
     cancelScheduledVote,
     updateConfig,
-    syncConfigWithBlockchain,
     isAutoVotingEnabled: config?.autoVotingEnabled || false,
-    isBlockchainConnected: isConnected,
   };
 };
