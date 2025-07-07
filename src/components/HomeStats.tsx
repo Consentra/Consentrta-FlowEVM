@@ -2,7 +2,7 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Users, Vote, Building, TrendingUp } from 'lucide-react';
+import { Users, Vote, Building, TrendingUp, Network } from 'lucide-react';
 import { useHomeData } from '@/hooks/useHomeData';
 
 export const HomeStats: React.FC = () => {
@@ -10,8 +10,8 @@ export const HomeStats: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
-        {[...Array(4)].map((_, i) => (
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-12">
+        {[...Array(5)].map((_, i) => (
           <Card key={i} className="p-6">
             <Skeleton className="h-8 w-16 mb-2" />
             <Skeleton className="h-4 w-20" />
@@ -22,6 +22,12 @@ export const HomeStats: React.FC = () => {
   }
 
   const statItems = [
+    {
+      icon: Network,
+      value: stats.supportedNetworks,
+      label: 'Networks',
+      color: 'text-purple-600'
+    },
     {
       icon: Building,
       value: stats.totalDAOs,
@@ -38,18 +44,18 @@ export const HomeStats: React.FC = () => {
       icon: TrendingUp,
       value: stats.totalVotes,
       label: 'Total Votes',
-      color: 'text-purple-600'
+      color: 'text-orange-600'
     },
     {
       icon: Users,
       value: stats.activeUsers,
-      label: 'Community Members',
-      color: 'text-orange-600'
+      label: 'Members',
+      color: 'text-red-600'
     }
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-12">
       {statItems.map((item, index) => {
         const Icon = item.icon;
         return (
