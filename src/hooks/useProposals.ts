@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useBlockchain } from '@/hooks/useBlockchain';
 import { useToast } from '@/hooks/use-toast';
-import { blockchainService } from '@/utils/blockchain';
+import { blockchainService } from '@/services/BlockchainService';
 import { Proposal, Vote } from '@/types/proposals';
 
 export const useProposals = (daoId?: string) => {
@@ -98,102 +98,6 @@ export const useProposals = (daoId?: string) => {
     }
   };
 
-  const castVote = async (proposalId: string, daoId: string, vote: 'for' | 'against' | 'abstain') => {
-    if (!user?.address) {
-      const error = new Error('Not authenticated');
-      toast({
-        title: "Authentication Required",
-        description: "Please connect your wallet to vote",
-        variant: "destructive",
-      });
-      return { error };
-    }
-
-    if (!isConnected || !isCorrectNetwork) {
-      const error = new Error('Wallet not connected to correct network');
-      toast({
-        title: "Wallet Required",
-        description: "Please connect your wallet to Flow EVM Testnet",
-        variant: "destructive",
-      });
-      return { error };
-    }
-
-    try {
-      setError(null);
-      const userId = user.address;
-
-      // Get the proposal to find blockchain info
-      const proposal = proposals.find(p => p.id === proposalId);
-      if (!proposal) throw new Error('Proposal not found');
-
-      // Get the DAO to find governor address
-      const { data: dao, error: daoError } = await supabase
-        .from('daos')
-        .select('governor_address')
-        .eq('id', daoId)
-        .single();
-
-      if (daoError) {
-        console.error('Error fetching DAO:', daoError);
-        throw new Error('DAO not found');
-      }
-
-      // Try to cast vote on blockchain if addresses are available
-      if (dao?.governor_address && proposal.blockchain_proposal_id) {
-        try {
-          const voteValue = vote === 'for' ? 1 : vote === 'against' ? 0 : 2;
-          await blockchainService.submitVote(
-            dao.governor_address,
-            proposal.blockchain_proposal_id,
-            voteValue,
-            `Vote: ${vote}`
-          );
-        } catch (blockchainError) {
-          console.error('Blockchain vote error:', blockchainError);
-          // Continue with database vote even if blockchain fails
-        }
-      }
-
-      // Save vote to database (upsert to handle vote changes)
-      const { error: voteError } = await supabase
-        .from('votes')
-        .upsert({
-          proposal_id: proposalId,
-          user_id: userId,
-          dao_id: daoId,
-          vote: vote,
-          automated: false
-        }, {
-          onConflict: 'proposal_id,user_id'
-        });
-
-      if (voteError) {
-        console.error('Database error casting vote:', voteError);
-        throw voteError;
-      }
-
-      toast({
-        title: "Vote Cast",
-        description: `Successfully voted "${vote}"`,
-      });
-
-      // Refresh data
-      await Promise.all([fetchProposals(), fetchUserVotes()]);
-
-      return { error: null };
-    } catch (error: any) {
-      console.error('Error casting vote:', error);
-      setError('Failed to cast vote');
-      toast({
-        title: "Failed to Cast Vote",
-        description: error.message || "Could not cast your vote. Please try again.",
-        variant: "destructive",
-      });
-      return { error };
-    }
-  };
-
   const createProposal = async (proposalData: {
     title: string;
     description: string;
@@ -215,7 +119,7 @@ export const useProposals = (daoId?: string) => {
       const error = new Error('Wallet not connected to correct network');
       toast({
         title: "Wallet Required",
-        description: "Please connect your wallet to Flow EVM Testnet",
+        description: "Please connect your wallet to create proposals on-chain",
         variant: "destructive",
       });
       return { error };
@@ -223,75 +127,67 @@ export const useProposals = (daoId?: string) => {
 
     try {
       setError(null);
-      const userId = user.address;
 
       // Get the DAO to find governor address
       const { data: dao, error: daoError } = await supabase
         .from('daos')
-        .select('governor_address')
+        .select('governor_address, name')
         .eq('id', proposalData.dao_id)
         .single();
 
-      if (daoError) {
-        console.error('Error fetching DAO:', daoError);
-        throw new Error('DAO not found');
+      if (daoError || !dao?.governor_address) {
+        throw new Error('DAO not found or not deployed on-chain');
       }
 
-      let blockchainProposalId = null;
+      toast({
+        title: "Creating Proposal On-Chain",
+        description: "Please confirm the transaction in your wallet...",
+      });
 
-      // Try to create proposal on blockchain if governor address is available
-      if (dao?.governor_address) {
-        try {
-          await blockchainService.createProposal(
-            dao.governor_address,
-            [], // targets
-            [], // values
-            [], // calldatas
-            proposalData.description,
-            proposalData.title,
-            [proposalData.category || 'general'],
-            85 // AI confidence score
-          );
-          blockchainProposalId = '1'; // In real implementation, extract from tx
-        } catch (blockchainError) {
-          console.error('Blockchain proposal creation error:', blockchainError);
-          // Continue with database creation even if blockchain fails
+      // Create proposal on blockchain - this requires wallet transaction
+      const blockchainResult = await blockchainService.createProposal(
+        dao.governor_address,
+        {
+          targets: [], // Empty for basic proposals
+          values: [],
+          calldatas: [],
+          description: proposalData.description,
+          title: proposalData.title,
+          tags: [proposalData.category || 'general'],
+          aiConfidenceScore: 85
         }
-      }
+      );
 
-      // Save to database
+      // Save to database with blockchain data
       const { data, error } = await supabase
         .from('proposals')
         .insert({
           ...proposalData,
-          creator_id: userId,
+          creator_id: user.address,
           deadline: proposalData.deadline?.toISOString(),
           status: 'active',
-          blockchain_proposal_id: blockchainProposalId
+          blockchain_proposal_id: blockchainResult.proposalId,
+          blockchain_tx_hash: blockchainResult.txHash
         })
         .select()
         .single();
 
       if (error) {
-        console.error('Database error creating proposal:', error);
         throw error;
       }
 
       toast({
-        title: "Proposal Created",
-        description: "Successfully created proposal",
+        title: "Proposal Created On-Chain",
+        description: `Successfully created proposal (${blockchainResult.txHash.slice(0, 10)}...)`,
       });
 
-      // Refresh data
       await fetchProposals();
-
       return { data, error: null };
     } catch (error: any) {
       console.error('Error creating proposal:', error);
-      setError('Failed to create proposal');
       toast({
         title: "Failed to Create Proposal",
-        description: error.message || "Could not create proposal. Please try again.",
+        description: error.message || "Could not create proposal on-chain. Please try again.",
         variant: "destructive",
       });
       return { error };
@@ -321,9 +217,8 @@ export const useProposals = (daoId?: string) => {
     userVotes,
     loading,
     error,
-    castVote,
     createProposal,
-    getUserVote,
+    getUserVote: (proposalId: string) => userVotes.find(vote => vote.proposal_id === proposalId),
     refetch: async () => {
       await Promise.all([fetchProposals(), fetchUserVotes()]);
     }
