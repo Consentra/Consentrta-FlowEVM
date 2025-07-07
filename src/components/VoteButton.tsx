@@ -2,10 +2,9 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2, Vote, XCircle } from 'lucide-react';
-import { useProposals } from '@/hooks/useProposals';
-import { useAuth } from '@/hooks/useAuth';
+import { useOnChainVoting } from '@/hooks/useOnChainVoting';
+import { useBlockchain } from '@/hooks/useBlockchain';
 import { useToast } from '@/hooks/use-toast';
-import { blockchainService } from '@/utils/blockchain';
 
 interface VoteButtonProps {
   proposalId: string;
@@ -15,7 +14,6 @@ interface VoteButtonProps {
   className?: string;
   variant?: 'default' | 'outline' | 'ghost' | 'destructive' | 'secondary' | 'link';
   children: React.ReactNode;
-  automated?: boolean;
   reason?: string;
 }
 
@@ -27,63 +25,56 @@ export const VoteButton: React.FC<VoteButtonProps> = ({
   className = '',
   variant = 'default',
   children,
-  automated = false,
   reason = ''
 }) => {
-  const [loading, setLoading] = useState(false);
-  const { castVote } = useProposals();
-  const { user, isConnected } = useAuth();
+  const { castOnChainVote, loading } = useOnChainVoting();
+  const { isConnected, isCorrectNetwork } = useBlockchain();
   const { toast } = useToast();
 
   const handleVote = async () => {
-    if (!user || !isConnected) {
+    console.log('VoteButton - On-chain vote requested', { 
+      proposalId, 
+      daoId, 
+      vote,
+      isConnected,
+      isCorrectNetwork
+    });
+    
+    if (!isConnected) {
       toast({
-        title: "Authentication Required",
-        description: "Please connect your wallet to vote",
+        title: "Wallet Not Connected",
+        description: "Please connect your wallet to vote on-chain",
         variant: "destructive",
       });
       return;
     }
 
-    setLoading(true);
-    try {
-      // Convert vote to support number
-      const support = vote === 'for' ? 1 : vote === 'against' ? 0 : 2;
-      
-      // Use enhanced blockchain service for voting
-      const txHash = await blockchainService.submitVote(
-        daoId, // This should be DAO address
-        proposalId,
-        support as 0 | 1 | 2,
-        reason || `Vote: ${vote}`,
-        automated
-      );
-
-      // Also update via hooks for UI consistency
-      const { error } = await castVote(proposalId, daoId, vote);
-      
-      if (!error) {
-        toast({
-          title: "Vote Cast",
-          description: `Successfully voted "${vote}" (${txHash.slice(0, 10)}...)`,
-        });
-      }
-    } catch (error: any) {
-      console.error('Vote error:', error);
+    if (!isCorrectNetwork) {
       toast({
-        title: "Vote Failed",
-        description: error.message || "Failed to cast vote. Please try again.",
+        title: "Wrong Network",
+        description: "Please switch to a supported network (Flow EVM or Hyperion)",
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
+      return;
+    }
+
+    // Show user that this will require a wallet transaction
+    toast({
+      title: "Transaction Required",
+      description: "Please confirm the transaction in your wallet to cast your vote on-chain",
+    });
+
+    const result = await castOnChainVote(proposalId, daoId, vote, reason);
+    
+    if (result.success) {
+      console.log('On-chain vote successful:', result.txHash);
     }
   };
 
   return (
     <Button
       onClick={handleVote}
-      disabled={disabled || loading}
+      disabled={disabled || loading || !isConnected}
       className={className}
       variant={variant}
       size="sm"
