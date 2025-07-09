@@ -1,5 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 
 interface MistralMessage {
   role: 'system' | 'user' | 'assistant';
@@ -9,12 +10,17 @@ interface MistralMessage {
 class MistralService {
   async chat(messages: MistralMessage[], model: string = 'mistral-large-latest'): Promise<string> {
     try {
-      // Use Supabase Edge Function instead of direct API call
+      // Use Supabase Edge Function for AI chat
       const { data, error } = await supabase.functions.invoke('ai-chat', {
-        body: { messages, model }
+        body: { 
+          messages, 
+          model,
+          provider: 'mistral'
+        }
       });
 
       if (error) {
+        console.error('Mistral API error:', error);
         throw new Error(`Mistral API error: ${error.message}`);
       }
 
@@ -55,7 +61,7 @@ Context available:
 - Auto-voting enabled: ${context.config?.autoVotingEnabled ? 'Yes' : 'No'}
 - Confidence threshold: ${context.config?.confidenceThreshold || 'Not set'}%
 
-Be concise, helpful, and automation-focused in your responses.`;
+Be concise, helpful, and automation-focused in your responses. Always provide practical advice for DAO participation and voting automation.`;
 
     const messages: MistralMessage[] = [
       { role: 'system', content: systemPrompt },
