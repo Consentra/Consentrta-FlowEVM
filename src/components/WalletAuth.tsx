@@ -47,7 +47,8 @@ export const WalletAuth: React.FC = () => {
           </Link>
           <div className="flex items-center justify-center space-x-3 mb-6">
             <img 
-              src="/lovable-uploads/cfc8144b-4936-4355-a021-7bc842b5ec32.png" 
+              src="/consentra-uploads
+/cfc8144b-4936-4355-a021-7bc842b5ec32.png" 
               alt="Consentra" 
               className="w-12 h-12 animate-bloom"
             />
