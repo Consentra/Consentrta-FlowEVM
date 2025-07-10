@@ -2,9 +2,6 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AuthProvider } from "@/hooks/useAuth";
-import { ThemeProvider } from "@/components/ThemeProvider";
 import { AppLayout } from "@/components/AppLayout";
 import { Index } from "@/pages/Index";
 import { WalletAuth } from "@/components/WalletAuth";
@@ -19,15 +16,10 @@ import Analytics from "@/pages/Analytics";
 import AICompanions from "@/pages/AICompanions";
 import NotFound from "@/pages/NotFound";
 
-const queryClient = new QueryClient();
-
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
-        <TooltipProvider>
-          <AuthProvider>
-            <Router>
+    <TooltipProvider>
+      <Router>
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/auth" element={<WalletAuth />} />
@@ -44,12 +36,9 @@ function App() {
                 </Route>
                 <Route path="*" element={<NotFound />} />
               </Routes>
-              <Toaster />
-            </Router>
-          </AuthProvider>
-        </TooltipProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+        <Toaster />
+      </Router>
+    </TooltipProvider>
   );
 }
 
