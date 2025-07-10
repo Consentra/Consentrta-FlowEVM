@@ -22,7 +22,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { WalletConnection } from '@/components/WalletConnection';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useSettings } from '@/hooks/useSettings';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -136,7 +136,7 @@ export const Settings: React.FC = () => {
                     {user ? `Connected: ${user.shortAddress}` : 'No wallet connected'}
                   </p>
                 </div>
-                <WalletConnection onConnect={() => {}} />
+                <ConnectButton showBalance={false} />
               </div>
             </CardContent>
           </Card>
