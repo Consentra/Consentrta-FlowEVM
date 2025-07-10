@@ -2,6 +2,8 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { injected } from 'wagmi/connectors';
 
 interface AuthContextType {
   user: { address: string; shortAddress: string } | null;
@@ -16,46 +18,35 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<{ address: string; shortAddress: string } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isConnected, setIsConnected] = useState(false);
   const { toast } = useToast();
+  
+  // Use wagmi hooks
+  const { address, isConnected } = useAccount();
+  const { connect } = useConnect();
+  const { disconnect } = useDisconnect();
 
+  // Handle wagmi account changes
   useEffect(() => {
-    checkConnection();
-    
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', handleChainChanged);
-      
-      return () => {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-        window.ethereum.removeListener('chainChanged', handleChainChanged);
-      };
-    }
-  }, []);
-
-  const handleAccountsChanged = async (accounts: string[]) => {
-    if (accounts.length === 0) {
-      signOut();
+    if (address && isConnected) {
+      handleConnection(address);
     } else {
-      const address = accounts[0];
-      await createWalletUserIfNeeded(address);
-      const userObj = {
-        address,
-        shortAddress: `${address.slice(0, 6)}...${address.slice(-4)}`
-      };
-      setUser(userObj);
-      setIsConnected(true);
-      
-      // Redirect to dashboard after successful connection
-      if (window.location.pathname === '/auth') {
-        window.location.href = '/dashboard';
-      }
+      setUser(null);
     }
-  };
+    setLoading(false);
+  }, [address, isConnected]);
 
-  const handleChainChanged = () => {
-    // Reload the page when chain changes to avoid issues
-    window.location.reload();
+  const handleConnection = async (walletAddress: string) => {
+    await createWalletUserIfNeeded(walletAddress);
+    const userObj = {
+      address: walletAddress,
+      shortAddress: `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
+    };
+    setUser(userObj);
+    
+    // Redirect to dashboard after successful connection
+    if (window.location.pathname === '/auth') {
+      window.location.href = '/dashboard';
+    }
   };
 
   const createWalletUserIfNeeded = async (walletAddress: string) => {
@@ -101,69 +92,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const checkConnection = async () => {
-    if (typeof window.ethereum !== 'undefined') {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        if (accounts.length > 0) {
-          const address = accounts[0];
-          await createWalletUserIfNeeded(address);
-          const userObj = {
-            address,
-            shortAddress: `${address.slice(0, 6)}...${address.slice(-4)}`
-          };
-          setUser(userObj);
-          setIsConnected(true);
-          
-          // If already connected and on auth page, redirect to dashboard
-          if (window.location.pathname === '/auth') {
-            window.location.href = '/dashboard';
-          }
-        }
-      } catch (error) {
-        console.error('Error checking connection:', error);
-      }
-    }
-    setLoading(false);
-  };
 
   const signIn = async () => {
-    if (typeof window.ethereum === 'undefined') {
-      const error = new Error('MetaMask not installed');
-      toast({
-        title: "MetaMask Required",
-        description: "Please install MetaMask to connect your wallet",
-        variant: "destructive",
-      });
-      return { error };
-    }
-
     try {
-      const accounts = await window.ethereum.request({
-        method: 'eth_requestAccounts',
-      });
-      
-      if (accounts.length > 0) {
-        const address = accounts[0];
-        await createWalletUserIfNeeded(address);
-        const userObj = {
-          address,
-          shortAddress: `${address.slice(0, 6)}...${address.slice(-4)}`
-        };
-        setUser(userObj);
-        setIsConnected(true);
-        
-        toast({
-          title: "Wallet Connected",
-          description: `Connected to ${address.slice(0, 6)}...${address.slice(-4)}`,
-        });
-
-        // Redirect to dashboard after successful sign in
-        setTimeout(() => {
-          window.location.href = '/dashboard';
-        }, 1000);
-      }
-      
+      connect({ connector: injected() });
       return { error: null };
     } catch (error: any) {
       console.error('Connection error:', error);
@@ -177,8 +109,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
+    disconnect();
     setUser(null);
-    setIsConnected(false);
     
     toast({
       title: "Wallet Disconnected",
@@ -191,17 +123,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return { error: null };
   };
 
-  return (
-    <AuthContext.Provider value={{
-      user,
-      loading,
-      signIn,
-      signOut,
-      isConnected,
-    }}>
-      {children}
-    </AuthContext.Provider>
-  );
+    return (
+      <AuthContext.Provider value={{
+        user,
+        loading,
+        signIn,
+        signOut,
+        isConnected,
+      }}>
+        {children}
+      </AuthContext.Provider>
+    );
 };
 
 export const useAuth = () => {
