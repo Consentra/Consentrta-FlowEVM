@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Wallet, Shield, Zap } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Link, useNavigate } from 'react-router-dom';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 export const WalletAuth: React.FC = () => {
   const { signIn, loading, user, isConnected } = useAuth();
@@ -46,7 +47,7 @@ export const WalletAuth: React.FC = () => {
           </Link>
           <div className="flex items-center justify-center space-x-3 mb-6">
             <img 
-              src="/consentra-uploads/cfc8144b-4936-4355-a021-7bc842b5ec32.png" 
+              src="/lovable-uploads/cfc8144b-4936-4355-a021-7bc842b5ec32.png" 
               alt="Consentra" 
               className="w-12 h-12 animate-bloom"
             />
@@ -67,41 +68,143 @@ export const WalletAuth: React.FC = () => {
               <span>Connect Wallet</span>
             </CardTitle>
             <CardDescription className="text-base">
-              Connect your MetaMask wallet to participate in decentralized governance
+              Connect your wallet to participate in decentralized governance
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-3">
               <div className="flex items-center space-x-2">
                 <Zap className="w-4 h-4 text-primary" />
-                <span className="font-medium text-sm">Why MetaMask?</span>
+                <span className="font-medium text-sm">Why Connect a Wallet?</span>
               </div>
               <ul className="text-sm text-muted-foreground space-y-1 ml-6">
                 <li>• Secure wallet-based authentication</li>
                 <li>• No passwords or email required</li>
-                <li>• Direct interaction with blockchain</li>
+                <li>• Support for multiple wallet types</li>
                 <li>• True decentralized identity</li>
               </ul>
             </div>
 
-            <Button 
-              onClick={handleConnect}
-              className="w-full h-11 btn-flower font-medium text-base" 
-              disabled={loading}
-            >
-              <Wallet className="mr-2 h-5 w-5" />
-              {loading ? 'Connecting...' : 'Connect MetaMask'}
-            </Button>
+            <ConnectButton.Custom>
+              {({
+                account,
+                chain,
+                openAccountModal,
+                openChainModal,
+                openConnectModal,
+                authenticationStatus,
+                mounted,
+              }) => {
+                const ready = mounted && authenticationStatus !== 'loading';
+                const connected =
+                  ready &&
+                  account &&
+                  chain &&
+                  (!authenticationStatus ||
+                    authenticationStatus === 'authenticated');
+
+                return (
+                  <div
+                    {...(!ready && {
+                      'aria-hidden': true,
+                      'style': {
+                        opacity: 0,
+                        pointerEvents: 'none',
+                        userSelect: 'none',
+                      },
+                    })}
+                  >
+                    {(() => {
+                      if (!connected) {
+                        return (
+                          <Button
+                            onClick={openConnectModal}
+                            className="w-full h-11 btn-flower font-medium text-base"
+                          >
+                            <Wallet className="mr-2 h-5 w-5" />
+                            Connect Wallet
+                          </Button>
+                        );
+                      }
+
+                      if (chain.unsupported) {
+                        return (
+                          <Button
+                            onClick={openChainModal}
+                            className="w-full h-11"
+                            variant="destructive"
+                          >
+                            Wrong Network
+                          </Button>
+                        );
+                      }
+
+                      return (
+                        <div className="flex gap-2 w-full">
+                          <Button
+                            onClick={openChainModal}
+                            className="flex-1"
+                            variant="outline"
+                          >
+                            {chain.hasIcon && (
+                              <div
+                                style={{
+                                  background: chain.iconBackground,
+                                  width: 16,
+                                  height: 16,
+                                  borderRadius: 999,
+                                  overflow: 'hidden',
+                                  marginRight: 8,
+                                }}
+                              >
+                                {chain.iconUrl && (
+                                  <img
+                                    alt={chain.name ?? 'Chain icon'}
+                                    src={chain.iconUrl}
+                                    style={{ width: 16, height: 16 }}
+                                  />
+                                )}
+                              </div>
+                            )}
+                            {chain.name}
+                          </Button>
+
+                          <Button
+                            onClick={openAccountModal}
+                            className="flex-1"
+                            variant="outline"
+                          >
+                            {account.displayName}
+                            {account.displayBalance
+                              ? ` (${account.displayBalance})`
+                              : ''}
+                          </Button>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                );
+              }}
+            </ConnectButton.Custom>
 
             <p className="text-center text-xs text-muted-foreground">
-              Don't have MetaMask?{' '}
+              Don't have a wallet?{' '}
               <a 
                 href="https://metamask.io/" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
-                Install it here
+                Install MetaMask
+              </a>{' '}
+              or{' '}
+              <a 
+                href="https://walletconnect.com/" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                use WalletConnect
               </a>
             </p>
           </CardContent>
