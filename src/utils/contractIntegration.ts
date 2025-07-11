@@ -1,12 +1,6 @@
 import { ethers } from 'ethers';
-import {
-  CONSENSTRA_DAO_ABI,
-  AI_ORACLE_ABI,
-  SOULBOUND_IDENTITY_ABI,
-  DAO_FACTORY_ABI,
-  DAO_INTEGRATION_MODULE_ABI,
-  DAO_STORAGE_MODULE_ABI
-} from './contractABIs';
+import { PROPOSAL_REGISTRY_ABI } from './contractABIs';
+import { CONTRACT_ADDRESSES } from './contractAddresses';
 
 // Utility function to get contract instance
 export const getContractInstance = (address: string, abi: any, signerOrProvider: ethers.Signer | ethers.Provider): ethers.Contract => {
@@ -35,21 +29,9 @@ export const isValidAddress = (address: string): boolean => {
   }
 };
 
-// Contract addresses
-export const CONTRACT_ADDRESSES = {
-  DAO_INTEGRATION_MODULE: '0xf6B3226088Bacc42CB43F52cB489ae94ff2732c1',
-  DAO_STORAGE_MODULE: '0x442FB791D2701B06D20c8E5E69f0560E1E14C6Fd',
-  CONSENSTRA_DAO: "0x0000000000000000000000000000000000000000",
-  AI_ORACLE: "0x0000000000000000000000000000000000000000",
-  SOULBOUND_IDENTITY: "0x0000000000000000000000000000000000000000",
-  DAO_FACTORY: "0x0000000000000000000000000000000000000000",
-};
-
-export {
-  CONSENSTRA_DAO_ABI,
-  AI_ORACLE_ABI,
-  SOULBOUND_IDENTITY_ABI,
-  DAO_FACTORY_ABI,
-  DAO_INTEGRATION_MODULE_ABI,
-  DAO_STORAGE_MODULE_ABI
+// Export all ABIs for easy access
+export { 
+  PROPOSAL_REGISTRY_ABI, 
+  MINIMAL_GOVERNOR_ABI, 
+  SOULBOUND_IDENTITY_NFT_ABI 
 } from './contractABIs';
