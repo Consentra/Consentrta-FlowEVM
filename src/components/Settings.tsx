@@ -22,9 +22,10 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { WalletConnection } from '@/components/WalletConnection';
 import { useSettings } from '@/hooks/useSettings';
 import { useAuth } from '@/hooks/useAuth';
+import { useAIVoting } from '@/hooks/useAIVoting';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -40,9 +41,19 @@ export const Settings: React.FC = () => {
     updateProfile,
     saveSettings
   } = useSettings();
+  const { config, updateConfig } = useAIVoting();
 
-  const handleToggle = (category: string, setting: string) => {
-    updateSettings(category as keyof typeof settings, setting, !settings[category][setting]);
+  const handleToggle = async (category: string, setting: string) => {
+    const newValue = !settings[category][setting];
+    updateSettings(category as keyof typeof settings, setting, newValue);
+    
+    // If it's an AI setting, also update the AI voting config
+    if (category === 'ai' && setting === 'autoVoting' && config) {
+      await updateConfig({
+        ...config,
+        autoVotingEnabled: newValue
+      });
+    }
   };
 
   if (loading) {
@@ -136,7 +147,7 @@ export const Settings: React.FC = () => {
                     {user ? `Connected: ${user.shortAddress}` : 'No wallet connected'}
                   </p>
                 </div>
-                <ConnectButton showBalance={false} />
+                <WalletConnection onConnect={() => {}} />
               </div>
             </CardContent>
           </Card>
@@ -334,6 +345,11 @@ export const Settings: React.FC = () => {
                     <p className="text-sm text-muted-foreground">
                       Allow Daisy to vote automatically on proposals that match your criteria
                     </p>
+                    {config && (
+                      <p className="text-xs text-blue-600">
+                        {config.preferences?.length || 0} preferences configured
+                      </p>
+                    )}
                   </div>
                   <Switch
                     checked={settings.ai.autoVoting}
