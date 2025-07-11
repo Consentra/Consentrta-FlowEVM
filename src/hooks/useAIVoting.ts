@@ -4,6 +4,7 @@ import { useBlockchain } from './useBlockchain';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { VotingPreference, AIVotingConfig, ProposalForVoting } from '@/types/proposals';
+import { useSettings } from './useSettings';
 
 export const useAIVoting = () => {
   const [config, setConfig] = useState<AIVotingConfig | null>(null);
@@ -11,6 +12,7 @@ export const useAIVoting = () => {
   const [isConfigSynced, setIsConfigSynced] = useState(false);
   const { isConnected, account } = useBlockchain();
   const { toast } = useToast();
+  const { settings, updateSettings, saveSettings } = useSettings();
 
   // Load configuration from backend and localStorage
   useEffect(() => {
@@ -52,6 +54,10 @@ export const useAIVoting = () => {
     setConfig(newConfig);
     localStorage.setItem('votingPreferences', JSON.stringify(newConfig));
     
+    // Sync with global settings
+    updateSettings('ai', 'enableDaisy', newConfig.autoVotingEnabled);
+    updateSettings('ai', 'autoVoting', newConfig.autoVotingEnabled);
+    
     // Save to backend if user is connected
     if (account) {
       try {
@@ -67,6 +73,8 @@ export const useAIVoting = () => {
         }
 
         setIsConfigSynced(true);
+        // Save global settings to persist changes
+        await saveSettings();
         toast({
           title: "Configuration Saved",
           description: "Daisy configuration has been saved successfully.",
@@ -81,7 +89,10 @@ export const useAIVoting = () => {
         setIsConfigSynced(false);
       }
     }
-  }, [account, toast]);
+    
+    // Dispatch event for other components
+    window.dispatchEvent(new CustomEvent('ai-voting-config-updated', { detail: newConfig }));
+  }, [account, toast, updateSettings, saveSettings]);
 
   // Monitor for new proposals and process them with Daisy
   useEffect(() => {
@@ -175,6 +186,18 @@ export const useAIVoting = () => {
     });
   }, [toast]);
 
+  // Listen for settings changes from Settings page
+  useEffect(() => {
+    const handleSettingsChange = () => {
+      if (config && settings.ai.autoVoting !== config.autoVotingEnabled) {
+        setConfig(prev => prev ? { ...prev, autoVotingEnabled: settings.ai.autoVoting } : null);
+      }
+    };
+
+    // Check for changes when settings update
+    handleSettingsChange();
+  }, [settings.ai.autoVoting, config]);
+
   return {
     config,
     activeVotingTasks,
@@ -182,6 +205,6 @@ export const useAIVoting = () => {
     scheduleVote,
     cancelScheduledVote,
     updateConfig,
-    isAutoVotingEnabled: config?.autoVotingEnabled || false,
+    isAutoVotingEnabled: config?.autoVotingEnabled ?? settings.ai.autoVoting ?? false,
   };
 };
