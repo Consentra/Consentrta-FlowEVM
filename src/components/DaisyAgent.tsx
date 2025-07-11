@@ -48,7 +48,7 @@ export const DaisyAgent: React.FC = () => {
     }
   });
 
-  // Listen for Daisy notifications
+  // Listen for Daisy notifications and config updates
   useEffect(() => {
     const handleDaisyNotification = (event: CustomEvent) => {
       const notification = event.detail;
@@ -90,9 +90,17 @@ export const DaisyAgent: React.FC = () => {
       }
     };
 
+    const handleConfigUpdate = (event: CustomEvent) => {
+      console.log('AI voting config updated:', event.detail);
+      // The config will be automatically updated by the useAIVoting hook
+    };
+
     window.addEventListener('daisy-notification', handleDaisyNotification as EventListener);
+    window.addEventListener('ai-voting-config-updated', handleConfigUpdate as EventListener);
+    
     return () => {
       window.removeEventListener('daisy-notification', handleDaisyNotification as EventListener);
+      window.removeEventListener('ai-voting-config-updated', handleConfigUpdate as EventListener);
     };
   }, [toast]);
 
@@ -177,7 +185,7 @@ export const DaisyAgent: React.FC = () => {
                 </div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-primary">{config.minConfidenceThreshold}%</div>
+                <div className="text-2xl font-bold text-primary">{config.confidenceThreshold}%</div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center">
                   <Brain className="h-3 w-3 mr-1" />
                   Confidence
