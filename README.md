@@ -66,7 +66,7 @@ function _update(address to, uint256 tokenId, address auth) internal override {
 - Audit trails for all automated decisions
 - Integration with OpenZeppelin Governor framework
 
-
+![1000032801.png](https://cdn.dorahacks.io/static/files/197f8e84f1d23d5c4d5b3b4410b89d3d.jpg)
 
 **Technical Benefits:**
 - **Parallel Processing**: Flow's architecture allows concurrent transaction processing
