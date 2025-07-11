@@ -1,6 +1,7 @@
+
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESSES } from '@/utils/contractAddresses';
-import { PROPOSAL_REGISTRY_ABI } from '@/utils/contractABIs';
+import { AI_ORACLE_ABI } from '@/utils/contractABIs';
 
 export interface AIPrediction {
   confidenceScore: number;
@@ -25,94 +26,147 @@ export class AIOracleService {
   constructor(signer: ethers.Signer) {
     this.signer = signer;
     this.contract = new ethers.Contract(
-      CONTRACT_ADDRESSES.PROPOSAL_REGISTRY,
-      PROPOSAL_REGISTRY_ABI,
+      CONTRACT_ADDRESSES.AI_ORACLE,
+      AI_ORACLE_ABI,
       signer
     );
     
-    console.log('🔮 AIOracle Service initialized with ProposalRegistry:', CONTRACT_ADDRESSES.PROPOSAL_REGISTRY);
+    console.log('🔮 AIOracle Service initialized with contract:', CONTRACT_ADDRESSES.AI_ORACLE);
   }
 
-  async updateAIAnalysis(
-    registryId: string,
+  async submitPrediction(
+    proposalId: string,
     confidenceScore: number,
-    predictedOutcome: number
+    predictedOutcome: number,
+    reasoning: string
   ): Promise<string> {
     try {
-      console.log('📊 Updating AI analysis:', {
-        registryId,
+      console.log('📊 Submitting AI prediction:', {
+        proposalId,
         confidenceScore,
-        predictedOutcome
+        predictedOutcome,
+        reasoning
       });
 
-      const tx = await this.contract.updateAIAnalysis(
-        registryId,
+      // Convert proposalId to bytes32
+      const proposalIdBytes32 = ethers.keccak256(ethers.toUtf8Bytes(proposalId));
+
+      const tx = await this.contract.submitPrediction(
+        proposalIdBytes32,
         confidenceScore,
-        predictedOutcome
+        predictedOutcome,
+        reasoning
       );
 
       const receipt = await tx.wait();
-      console.log(`✅ AI analysis updated. Tx: ${receipt.hash}`);
+      console.log(`✅ AI prediction submitted. Tx: ${receipt.hash}`);
       
       return receipt.hash;
     } catch (error: any) {
-      console.error('❌ Failed to update AI analysis:', error);
-      throw new Error(`Failed to update AI analysis: ${error.message || 'Unknown error'}`);
+      console.error('❌ Failed to submit AI prediction:', error);
+      throw new Error(`Failed to submit AI prediction: ${error.message || 'Unknown error'}`);
     }
   }
 
-  async getProposal(registryId: string): Promise<any> {
+  async submitAnalysis(
+    proposalId: string,
+    summary: string,
+    tags: string[],
+    complexityScore: number,
+    riskScore: number
+  ): Promise<string> {
     try {
-      const proposal = await this.contract.getProposal(registryId);
-      console.log('🔍 Retrieved proposal:', registryId, proposal);
-      return proposal;
+      console.log('📊 Submitting AI analysis:', {
+        proposalId,
+        summary,
+        tags,
+        complexityScore,
+        riskScore
+      });
+
+      // Convert proposalId to bytes32
+      const proposalIdBytes32 = ethers.keccak256(ethers.toUtf8Bytes(proposalId));
+
+      const tx = await this.contract.submitAnalysis(
+        proposalIdBytes32,
+        summary,
+        tags,
+        complexityScore,
+        riskScore
+      );
+
+      const receipt = await tx.wait();
+      console.log(`✅ AI analysis submitted. Tx: ${receipt.hash}`);
+      
+      return receipt.hash;
     } catch (error: any) {
-      console.error('❌ Failed to get proposal:', error);
+      console.error('❌ Failed to submit AI analysis:', error);
+      throw new Error(`Failed to submit AI analysis: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  async getPrediction(proposalId: string): Promise<AIPrediction | null> {
+    try {
+      const proposalIdBytes32 = ethers.keccak256(ethers.toUtf8Bytes(proposalId));
+      const prediction = await this.contract.getPrediction(proposalIdBytes32);
+      
+      if (!prediction.isValid) {
+        return null;
+      }
+
+      return {
+        confidenceScore: Number(prediction.confidenceScore),
+        predictedOutcome: Number(prediction.predictedOutcome) === 1 ? 'pass' : 'fail',
+        reasoning: prediction.reasoning,
+        timestamp: Number(prediction.timestamp),
+        isValid: prediction.isValid
+      };
+    } catch (error: any) {
+      console.error('❌ Failed to get AI prediction:', error);
       return null;
     }
   }
 
-  async getAllProposals(offset: number = 0, limit: number = 50): Promise<any[]> {
+  async getAnalysis(proposalId: string): Promise<AIAnalysis | null> {
     try {
-      const proposals = await this.contract.getAllProposals(offset, limit);
-      console.log('📊 Retrieved proposals:', proposals.length);
-      return proposals;
+      const proposalIdBytes32 = ethers.keccak256(ethers.toUtf8Bytes(proposalId));
+      const analysis = await this.contract.getAnalysis(proposalIdBytes32);
+      
+      if (!analysis.timestamp || Number(analysis.timestamp) === 0) {
+        return null;
+      }
+
+      return {
+        summary: analysis.summary,
+        tags: analysis.tags,
+        complexityScore: Number(analysis.complexityScore),
+        riskScore: Number(analysis.riskScore),
+        timestamp: Number(analysis.timestamp)
+      };
     } catch (error: any) {
-      console.error('❌ Failed to get proposals:', error);
-      return [];
+      console.error('❌ Failed to get AI analysis:', error);
+      return null;
     }
   }
 
-  async getProposalsByCategory(category: string): Promise<any[]> {
+  async getBatchPredictions(proposalIds: string[]): Promise<AIPrediction[]> {
     try {
-      const proposals = await this.contract.getProposalsByCategory(category);
-      console.log('📊 Retrieved proposals by category:', category, proposals.length);
-      return proposals;
+      const proposalIdBytes32Array = proposalIds.map(id => 
+        ethers.keccak256(ethers.toUtf8Bytes(id))
+      );
+      
+      const predictions = await this.contract.getBatchPredictions(proposalIdBytes32Array);
+      
+      return predictions.map((prediction: any) => ({
+        confidenceScore: Number(prediction.confidenceScore),
+        predictedOutcome: Number(prediction.predictedOutcome) === 1 ? 'pass' : 'fail',
+        reasoning: prediction.reasoning,
+        timestamp: Number(prediction.timestamp),
+        isValid: prediction.isValid
+      })).filter((p: AIPrediction) => p.isValid);
     } catch (error: any) {
-      console.error('❌ Failed to get proposals by category:', error);
+      console.error('❌ Failed to get batch predictions:', error);
       return [];
-    }
-  }
-
-  async getUserStats(address: string): Promise<{
-    proposalsCreated: number;
-    totalVotes: number;
-    isVerified: boolean;
-  }> {
-    try {
-      const stats = await this.contract.getUserStats(address);
-      return {
-        proposalsCreated: Number(stats.proposalsCreated),
-        totalVotes: Number(stats.totalVotes),
-        isVerified: stats.isVerified
-      };
-    } catch (error: any) {
-      console.error('❌ Failed to get user stats:', error);
-      return {
-        proposalsCreated: 0,
-        totalVotes: 0,
-        isVerified: false
-      };
     }
   }
 
@@ -124,6 +178,39 @@ export class AIOracleService {
     } catch (error: any) {
       console.error('❌ Failed to get contract owner:', error);
       return '';
+    }
+  }
+
+  async addOracle(oracleAddress: string): Promise<string> {
+    try {
+      const tx = await this.contract.addOracle(oracleAddress);
+      const receipt = await tx.wait();
+      console.log(`✅ Oracle added: ${oracleAddress}. Tx: ${receipt.hash}`);
+      return receipt.hash;
+    } catch (error: any) {
+      console.error('❌ Failed to add oracle:', error);
+      throw new Error(`Failed to add oracle: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  async removeOracle(oracleAddress: string): Promise<string> {
+    try {
+      const tx = await this.contract.removeOracle(oracleAddress);
+      const receipt = await tx.wait();
+      console.log(`✅ Oracle removed: ${oracleAddress}. Tx: ${receipt.hash}`);
+      return receipt.hash;
+    } catch (error: any) {
+      console.error('❌ Failed to remove oracle:', error);
+      throw new Error(`Failed to remove oracle: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  async isAuthorizedOracle(oracleAddress: string): Promise<boolean> {
+    try {
+      return await this.contract.authorizedOracles(oracleAddress);
+    } catch (error: any) {
+      console.error('❌ Failed to check oracle authorization:', error);
+      return false;
     }
   }
 }
