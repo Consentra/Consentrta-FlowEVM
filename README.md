@@ -144,6 +144,15 @@ Add Flow EVM Testnet to your wallet:
 - **Currency Symbol**: `FLOW`
 - **Block Explorer**: `https://evm-testnet.flowscan.io`
 
+### Hyperion Testnet Setup
+
+Add Hyperion Testnet to your wallet:
+- **Network Name**:Hyperion (Testnet)
+- **RPC URL**: `https://hyperion-testnet.metisdevops.link`
+- **Chain ID**: `133717`
+- **Currency Symbol**: `tMETIS`
+- **Block Explorer**: `https://hyperion-testnet-explorer.metisdevops.link`
+  
 ## 🔧 Key Innovations
 
 ### 1. Multi-Modal AI Integration
