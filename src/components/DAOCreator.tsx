@@ -112,7 +112,7 @@ export const DAOCreator: React.FC = () => {
 
       toast({
         title: "DAO Created Successfully!",
-        description: `${formData.name} has been deployed to Flow EVM Testnet`,
+        description: `${formData.name} has been deployed to Hyperion Testnet`,
       });
 
       // Navigate to the new DAO
@@ -140,7 +140,7 @@ export const DAOCreator: React.FC = () => {
             <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold mb-2">Wallet Connection Required</h2>
             <p className="text-muted-foreground mb-4">
-              You need to connect your wallet to create a DAO on Flow EVM Testnet.
+              You need to connect your wallet to create a DAO on Hyperion Testnet.
             </p>
             <Button onClick={() => navigate('/auth')}>
               Connect Wallet
@@ -158,7 +158,7 @@ export const DAOCreator: React.FC = () => {
           Create DAO
         </h1>
         <p className="text-lg text-muted-foreground">
-          Launch your decentralized autonomous organization
+          Launch your decentralized autonomous organization on Hyperion Testnet
         </p>
       </div>
 
@@ -195,7 +195,7 @@ export const DAOCreator: React.FC = () => {
           <CardDescription>
             {step === 1 && 'Set up your DAO\'s identity and purpose'}
             {step === 2 && 'Configure voting parameters and governance rules'}
-            {step === 3 && 'Review your settings and deploy your DAO'}
+            {step === 3 && 'Review your settings and deploy your DAO to Hyperion Testnet'}
           </CardDescription>
         </CardHeader>
 
@@ -339,7 +339,8 @@ export const DAOCreator: React.FC = () => {
               <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg">
                 <p className="text-sm text-primary font-medium mb-2">⚡ Ready to Deploy</p>
                 <p className="text-sm text-muted-foreground">
-                  Your DAO will be deployed to Flow EVM Testnet. Gas fees will be required for deployment.
+                  Your DAO will be deployed to Hyperion Testnet using the DAOFactory contract. 
+                  Gas fees in tMETIS will be required for deployment.
                 </p>
               </div>
             </div>
