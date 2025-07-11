@@ -3,7 +3,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with React](https://img.shields.io/badge/Built%20with-React-61DAFB.svg)](https://reactjs.org/)
-[![Flow EVM][Metis Hyperion](https://img.shields.io/badge/Blockchain-Flow%20EVM-00D4AA.svg)](https://flow.com/ (https://docs.metis.io/hyperion))
+[![Flow EVM](https://img.shields.io/badge/Blockchain-Flow%20EVM-00D4AA.svg)](https://flow.com/)
+[![Metis Hyperion](https://img.shields.io/badge/Blockchain-Metis%20Hyperion-00D4AA.svg)](https://docs.metis.io/hyperion)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
 > Revolutionizing decentralized governance through AI-powered automation, sybil-resistant identity verification, and intelligent voting mechanisms.
