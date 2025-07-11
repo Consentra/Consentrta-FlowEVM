@@ -44,7 +44,7 @@ export class DaisyVotingEngine {
       }
 
       // Handle conflicts or low confidence
-      if (decision.confidence < this.config.minConfidenceThreshold) {
+      if (decision.confidence < this.config.confidenceThreshold) {
         console.log(`Confidence too low (${decision.confidence}%) - manual approval required`);
         decision.requiresApproval = true;
       }
@@ -223,6 +223,22 @@ export class DaisyVotingEngine {
     } catch (error) {
       console.error('AI analysis failed:', error);
       return null;
+    }
+  }
+
+  private async checkExistingVote(proposalId: string): Promise<boolean> {
+    try {
+      const { data } = await supabase
+        .from('votes')
+        .select('id')
+        .eq('proposal_id', proposalId)
+        .eq('user_id', this.userAddress)
+        .single();
+      
+      return !!data;
+    } catch (error) {
+      console.error('Error checking existing vote:', error);
+      return false;
     }
   }
 
