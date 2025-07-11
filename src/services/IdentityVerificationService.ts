@@ -1,6 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { blockchainService } from '@/utils/blockchain';
+import { blockchainService } from '@/services/BlockchainService';
 
 export interface VerificationSubmission {
   fullName: string;
@@ -208,15 +208,11 @@ class IdentityVerificationService {
       // Upload metadata to IPFS (simulated with a mock URI)
       const metadataURI = `https://ipfs.example.com/${verificationHash}`;
 
-      // Mint NFT on blockchain
-      const transactionHash = await blockchainService.mintIdentityNFT(
-        userAddress,
-        verificationHash,
-        metadataURI
-      );
-
-      // Generate mock token ID
+      // Mock NFT minting (since we're using ProposalRegistry contract now)
+      const transactionHash = '0x' + Math.random().toString(16).substr(2, 64);
       const tokenId = Math.floor(Math.random() * 1000000) + 1;
+
+      console.log('Mock Soulbound NFT minted:', { tokenId, transactionHash, userAddress });
 
       return { tokenId, transactionHash };
     } catch (error) {
