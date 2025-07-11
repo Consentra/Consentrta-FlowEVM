@@ -1,3 +1,4 @@
+
 import { ethers } from 'ethers';
 import { PROPOSAL_REGISTRY_ABI } from './contractABIs';
 import { CONTRACT_ADDRESSES } from './contractAddresses';
@@ -33,5 +34,9 @@ export const isValidAddress = (address: string): boolean => {
 export { 
   PROPOSAL_REGISTRY_ABI, 
   MINIMAL_GOVERNOR_ABI, 
-  SOULBOUND_IDENTITY_NFT_ABI 
+  SOULBOUND_IDENTITY_NFT_ABI,
+  DAO_LIB_ABI,
+  GOVERNANCE_LIB_ABI,
+  AI_ORACLE_ABI,
+  MINIMAL_DAO_ABI
 } from './contractABIs';
