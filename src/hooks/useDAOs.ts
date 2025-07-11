@@ -1,9 +1,11 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useBlockchain } from '@/hooks/useBlockchain';
 import { useToast } from '@/hooks/use-toast';
 import { blockchainService } from '@/services/BlockchainService';
+import { minimalDAOService } from '@/services/MinimalDAOService';
 
 interface DAO {
   id: string;
@@ -19,6 +21,7 @@ interface DAO {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  dao_id?: number; // On-chain DAO ID
 }
 
 interface DAOMembership {
@@ -108,7 +111,7 @@ export const useDAOs = () => {
       const error = new Error('Wallet not connected to correct network');
       toast({
         title: "Wallet Required",
-        description: "Please connect your wallet to a supported network",
+        description: "Please connect your wallet to Hyperion Testnet",
         variant: "destructive",
       });
       return { error };
@@ -121,6 +124,9 @@ export const useDAOs = () => {
         title: "Creating DAO On-Chain",
         description: "Please confirm the transaction in your wallet...",
       });
+
+      // Ensure blockchain service is connected
+      await blockchainService.connect();
 
       // Create the DAO on blockchain first - this will require wallet transaction
       const blockchainResult = await blockchainService.createDAO({
@@ -135,7 +141,7 @@ export const useDAOs = () => {
         timelockDelay: "172800"
       });
 
-      // Save to database with blockchain addresses
+      // Save to database with blockchain addresses and on-chain DAO ID
       const { data, error } = await supabase
         .from('daos')
         .insert({
@@ -144,6 +150,7 @@ export const useDAOs = () => {
           token_address: blockchainResult.token,
           governor_address: blockchainResult.dao,
           timelock_address: blockchainResult.timelock,
+          dao_id: blockchainResult.daoId, // Store the on-chain DAO ID
         })
         .select()
         .single();
@@ -163,7 +170,7 @@ export const useDAOs = () => {
 
       toast({
         title: "DAO Created Successfully",
-        description: `Your DAO has been deployed on-chain (${blockchainResult.txHash.slice(0, 10)}...)`,
+        description: `Your DAO has been deployed on Hyperion Testnet with ID ${blockchainResult.daoId}`,
       });
 
       await Promise.all([fetchDAOs(), fetchUserMemberships()]);
@@ -194,7 +201,7 @@ export const useDAOs = () => {
       const error = new Error('Wallet not connected');
       toast({
         title: "Wallet Required",
-        description: "Please connect your wallet to join DAOs on-chain",
+        description: "Please connect your wallet to Hyperion Testnet",
         variant: "destructive",
       });
       return { error };
@@ -213,6 +220,9 @@ export const useDAOs = () => {
         title: "Joining DAO On-Chain",
         description: "Please confirm the transaction in your wallet...",
       });
+
+      // Ensure blockchain service is connected
+      await blockchainService.connect();
 
       // Join DAO on-chain - this requires wallet transaction
       const txHash = await blockchainService.joinDAO(dao.governor_address);
@@ -325,7 +335,7 @@ export const useDAOs = () => {
     error,
     createDAO,
     joinDAO,
-    leaveDAO: async () => ({ error: new Error('Leave DAO not implemented for on-chain') }),
+    leaveDAO,
     isUserMember: (daoId: string) => userMemberships.some(m => m.dao_id === daoId),
     getUserRole: (daoId: string) => userMemberships.find(m => m.dao_id === daoId)?.role || null,
     refetch: async () => {
