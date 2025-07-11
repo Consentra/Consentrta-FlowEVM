@@ -66,14 +66,7 @@ function _update(address to, uint256 tokenId, address auth) internal override {
 - Audit trails for all automated decisions
 - Integration with OpenZeppelin Governor framework
 
-### 🌊 Flow EVM Integration
-
-**Next-Generation Blockchain Infrastructure**
-- **High Performance**: Flow's unique multi-role architecture enables high throughput
-- **Low Cost**: Significantly reduced gas fees compared to Ethereum mainnet
-- **Developer Experience**: Full EVM compatibility with enhanced features
-- **Scalability**: Resource-oriented programming model for complex applications
-- **Environmental Sustainability**: Proof-of-Stake consensus with minimal energy consumption
+https://cdn.dorahacks.io/static/files/196949e8ce7f51e869b070b4a78adbcb.png
 
 **Technical Benefits:**
 - **Parallel Processing**: Flow's architecture allows concurrent transaction processing
