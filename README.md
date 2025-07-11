@@ -8,7 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
 > Revolutionizing decentralized governance through AI-powered automation, sybil-resistant identity verification, and intelligent voting mechanisms.
-
+![1000032801.png](https://cdn.dorahacks.io/static/files/196949e8ce7f51e869b070b4a78adbcb.png)
 ## 🎯 Overview
 
 Consenstra is a cutting-edge DAO governance platform that combines artificial intelligence, blockchain technology, and innovative identity verification to create the most advanced and secure decentralized autonomous organization framework available today.
@@ -66,7 +66,7 @@ function _update(address to, uint256 tokenId, address auth) internal override {
 - Audit trails for all automated decisions
 - Integration with OpenZeppelin Governor framework
 
-https://cdn.dorahacks.io/static/files/196949e8ce7f51e869b070b4a78adbcb.png
+
 
 **Technical Benefits:**
 - **Parallel Processing**: Flow's architecture allows concurrent transaction processing
