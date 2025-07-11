@@ -1,20 +1,15 @@
 
-// Contract addresses for the minimal architecture
-export const MINIMAL_CONTRACT_ADDRESSES = {
-  // These will be updated after deployment
-  DAO_FACTORY: "0x0000000000000000000000000000000000000000",
-  SOULBOUND_IDENTITY: "0x0000000000000000000000000000000000000000",
-  
-  // Implementation contracts (for factory cloning)
-  DAO_IMPLEMENTATION: "0x0000000000000000000000000000000000000000",
-  GOVERNOR_IMPLEMENTATION: "0x0000000000000000000000000000000000000000",
-  TOKEN_IMPLEMENTATION: "0x0000000000000000000000000000000000000000",
+// Contract addresses for Hyperion Testnet
+export const CONTRACT_ADDRESSES = {
+  PROPOSAL_REGISTRY: "0x5982AE5245cc24e32881B367993b1B07CF190116",
+  MINIMAL_GOVERNOR: "0xcF4eE18D5340D575D51769B57e92F634951aBb3E",
+  SOULBOUND_IDENTITY_NFT: "0x3a29f17Bbd4Cd5f44BD489aDA60F4f9f3275885a",
 };
 
-export const CONTRACT_SIZES = {
-  MinimalGovernor: "~12KB",
-  MinimalDAO: "~8KB", 
-  DAOFactory: "~6KB",
-  ConsentraGovernanceToken: "~5KB",
-  SoulboundIdentityNFT: "~7KB"
+export const NETWORK_CONFIG = {
+  chainId: 133717,
+  chainName: "Hyperion (Testnet)",
+  currency: "tMetis",
+  rpcUrl: "https://hyperion-testnet.metisdevops.link",
+  blockExplorerUrl: "https://hyperion-testnet-explorer.metisdevops.link"
 };
