@@ -1,26 +1,12 @@
 
 import { ethers } from 'ethers';
 import { getContractInstance } from '@/utils/contractIntegration';
+import { CONTRACT_ADDRESSES } from '@/utils/contractAddresses';
+import { DAO_FACTORY_ABI, MINIMAL_DAO_ABI } from '@/utils/contractABIs';
+import { daoLibService, DAOConfig } from '@/services/DAOLibService';
+import { governanceLibService } from '@/services/GovernanceLibService';
 
-// Minimal ABI for the new contracts
-const MINIMAL_DAO_ABI = [
-  "function joinDAO() external",
-  "function createProposal(string memory description) external returns (uint256)",
-  "function vote(uint256 proposalId, uint8 support) external returns (uint256)",
-  "function voteWithReason(uint256 proposalId, uint8 support, string calldata reason) external returns (uint256)",
-  "function isMember(address account) external view returns (bool)",
-  "function getConfig() external view returns (tuple(string name, uint256 votingDelay, uint256 votingPeriod, uint256 quorumPercentage, address creator, uint256 createdAt))",
-  "function memberCount() external view returns (uint256)",
-  "function proposalCount() external view returns (uint256)"
-];
-
-const DAO_FACTORY_ABI = [
-  "function createDAO(string memory name, uint256 initialSupply) external returns (uint256)",
-  "function getDAO(uint256 daoId) external view returns (address)",
-  "function getUserDAOs(address user) external view returns (uint256[])",
-  "function daoCounter() external view returns (uint256)"
-];
-
+// Minimal Governor ABI for voting functions
 const MINIMAL_GOVERNOR_ABI = [
   "function propose(string memory description) external returns (uint256)",
   "function castVote(uint256 proposalId, uint8 support) external returns (uint256)",
@@ -41,11 +27,15 @@ export class MinimalDAOService {
   async connect(provider: ethers.BrowserProvider): Promise<void> {
     this.provider = provider;
     this.signer = await provider.getSigner();
+    
+    // Connect the library services
+    await daoLibService.connect(provider);
+    await governanceLibService.connect(provider);
   }
 
-  private getFactoryContract(factoryAddress: string): ethers.Contract {
+  private getFactoryContract(): ethers.Contract {
     if (!this.signer) throw new Error('Signer not available');
-    return getContractInstance(factoryAddress, DAO_FACTORY_ABI, this.signer);
+    return getContractInstance(CONTRACT_ADDRESSES.DAO_FACTORY, DAO_FACTORY_ABI, this.signer);
   }
 
   private getDAOContract(daoAddress: string): ethers.Contract {
@@ -58,33 +48,79 @@ export class MinimalDAOService {
     return getContractInstance(governorAddress, MINIMAL_GOVERNOR_ABI, this.signer);
   }
 
-  // Factory methods
+  // Enhanced DAO creation with validation
   async createDAO(
-    factoryAddress: string,
     name: string,
     initialSupply: string = "1000000"
   ): Promise<{ daoId: number; txHash: string }> {
     try {
-      const factory = this.getFactoryContract(factoryAddress);
-      const tx = await factory.createDAO(name, ethers.parseEther(initialSupply));
+      if (!this.signer) throw new Error('Signer not available');
+      
+      const signerAddress = await this.signer.getAddress();
+      
+      // Create and validate DAO configuration using DAOLib
+      const config = daoLibService.createConfig(
+        name,
+        1,     // votingDelay
+        50400, // votingPeriod (about 1 week in blocks)
+        4,     // quorumPercentage
+        signerAddress
+      );
+      
+      // Validate configuration before proceeding
+      await daoLibService.validateConfig(config);
+      console.log('DAO configuration validated successfully');
+
+      // Check if user is verified for governance participation
+      const canParticipate = await governanceLibService.canParticipateInGovernance(
+        CONTRACT_ADDRESSES.SOULBOUND_IDENTITY_NFT,
+        signerAddress
+      );
+      
+      if (!canParticipate.canParticipate) {
+        console.warn('User verification check failed:', canParticipate.reason);
+        // Continue with creation but log the warning
+      }
+
+      const factory = this.getFactoryContract();
+      console.log('Creating DAO with factory at:', CONTRACT_ADDRESSES.DAO_FACTORY);
+      
+      // Convert initialSupply to Wei (assuming 18 decimals)
+      const supplyInWei = ethers.parseEther(initialSupply);
+      
+      const tx = await factory.createDAO(name, supplyInWei);
+      console.log('Transaction sent:', tx.hash);
+      
       const receipt = await tx.wait();
+      console.log('Transaction confirmed:', receipt.hash);
       
       // Extract DAO ID from events
-      const event = receipt.logs.find((log: any) => 
-        log.topics[0] === ethers.id("DAOCreated(uint256,address,address,string)")
-      );
-      const daoId = parseInt(event?.topics[1] || "0", 16);
+      const daoCreatedEvent = receipt.logs.find((log: any) => {
+        try {
+          const decoded = factory.interface.parseLog(log);
+          return decoded && decoded.name === 'DAOCreated';
+        } catch {
+          return false;
+        }
+      });
       
-      return { daoId, txHash: receipt.hash };
+      if (daoCreatedEvent) {
+        const decoded = factory.interface.parseLog(daoCreatedEvent);
+        const daoId = Number(decoded.args.daoId);
+        console.log('DAO created with ID:', daoId);
+        return { daoId, txHash: receipt.hash };
+      }
+      
+      throw new Error('Failed to extract DAO ID from transaction receipt');
     } catch (error) {
       console.error('Failed to create DAO:', error);
       throw error;
     }
   }
 
-  async getDAO(factoryAddress: string, daoId: number): Promise<string> {
+  async getDAO(daoId: number): Promise<string> {
     try {
-      const factory = this.getFactoryContract(factoryAddress);
+      const factory = this.getFactoryContract();
       return await factory.getDAO(daoId);
     } catch (error) {
       console.error('Failed to get DAO:', error);
@@ -92,9 +128,9 @@ export class MinimalDAOService {
     }
   }
 
-  async getUserDAOs(factoryAddress: string, userAddress: string): Promise<number[]> {
+  async getUserDAOs(userAddress: string): Promise<number[]> {
     try {
-      const factory = this.getFactoryContract(factoryAddress);
+      const factory = this.getFactoryContract();
       const daoIds = await factory.getUserDAOs(userAddress);
       return daoIds.map((id: any) => Number(id));
     } catch (error) {
@@ -103,15 +139,33 @@ export class MinimalDAOService {
     }
   }
 
-  // DAO methods
-  async joinDAO(daoAddress: string): Promise<string> {
+  async getDaoCounter(): Promise<number> {
+    try {
+      const factory = this.getFactoryContract();
+      const counter = await factory.daoCounter();
+      return Number(counter);
+    } catch (error) {
+      console.error('Failed to get DAO counter:', error);
+      return 0;
+    }
+  }
+
+  // New DAO methods using the deployed MinimalDAO contract
+  async connectToMinimalDAO(daoAddress: string = CONTRACT_ADDRESSES.MINIMAL_DAO) {
+    console.log('🔗 Connecting to MinimalDAO at:', daoAddress);
+    return this.getDAOContract(daoAddress);
+  }
+
+  // DAO methods using the new MinimalDAO contract
+  async joinDAO(daoAddress: string = CONTRACT_ADDRESSES.MINIMAL_DAO): Promise<string> {
     try {
       const dao = this.getDAOContract(daoAddress);
       const tx = await dao.joinDAO();
       const receipt = await tx.wait();
+      console.log('✅ Successfully joined DAO:', receipt.hash);
       return receipt.hash;
     } catch (error) {
-      console.error('Failed to join DAO:', error);
+      console.error('❌ Failed to join DAO:', error);
       throw error;
     }
   }
@@ -122,26 +176,54 @@ export class MinimalDAOService {
       const tx = await dao.createProposal(description);
       const receipt = await tx.wait();
       
-      const event = receipt.logs.find((log: any) => 
-        log.topics[0] === ethers.id("ProposalCreated(uint256,address)")
-      );
-      const proposalId = parseInt(event?.topics[1] || "0", 16);
+      // Extract proposal ID from events
+      const event = receipt.logs.find((log: any) => {
+        try {
+          const decoded = dao.interface.parseLog(log);
+          return decoded && decoded.name === 'ProposalCreated';
+        } catch {
+          return false;
+        }
+      });
       
+      let proposalId = 0;
+      if (event) {
+        const decoded = dao.interface.parseLog(event);
+        proposalId = Number(decoded.args.proposalId);
+      }
+      
+      console.log('✅ Proposal created:', { proposalId, txHash: receipt.hash });
       return { proposalId, txHash: receipt.hash };
     } catch (error) {
-      console.error('Failed to create proposal:', error);
+      console.error('❌ Failed to create proposal:', error);
       throw error;
     }
   }
 
+  // Enhanced voting with verification
   async vote(daoAddress: string, proposalId: number, support: number): Promise<string> {
     try {
+      if (!this.signer) throw new Error('Signer not available');
+      
+      const signerAddress = await this.signer.getAddress();
+      
+      // Validate user can participate in governance
+      const canParticipate = await governanceLibService.canParticipateInGovernance(
+        CONTRACT_ADDRESSES.SOULBOUND_IDENTITY_NFT,
+        signerAddress
+      );
+      
+      if (!canParticipate.canParticipate) {
+        throw new Error(`Cannot vote: ${canParticipate.reason}`);
+      }
+
       const dao = this.getDAOContract(daoAddress);
       const tx = await dao.vote(proposalId, support);
       const receipt = await tx.wait();
+      console.log('✅ Vote cast successfully:', receipt.hash);
       return receipt.hash;
     } catch (error) {
-      console.error('Failed to vote:', error);
+      console.error('❌ Failed to vote:', error);
       throw error;
     }
   }
@@ -153,12 +235,27 @@ export class MinimalDAOService {
     reason: string
   ): Promise<string> {
     try {
+      if (!this.signer) throw new Error('Signer not available');
+      
+      const signerAddress = await this.signer.getAddress();
+      
+      // Validate user can participate in governance
+      const canParticipate = await governanceLibService.canParticipateInGovernance(
+        CONTRACT_ADDRESSES.SOULBOUND_IDENTITY_NFT,
+        signerAddress
+      );
+      
+      if (!canParticipate.canParticipate) {
+        throw new Error(`Cannot vote: ${canParticipate.reason}`);
+      }
+
       const dao = this.getDAOContract(daoAddress);
       const tx = await dao.voteWithReason(proposalId, support, reason);
       const receipt = await tx.wait();
+      console.log('✅ Vote with reason cast successfully:', receipt.hash);
       return receipt.hash;
     } catch (error) {
-      console.error('Failed to vote with reason:', error);
+      console.error('❌ Failed to vote with reason:', error);
       throw error;
     }
   }
@@ -168,7 +265,7 @@ export class MinimalDAOService {
       const dao = this.getDAOContract(daoAddress);
       return await dao.isMember(account);
     } catch (error) {
-      console.error('Failed to check membership:', error);
+      console.error('❌ Failed to check membership:', error);
       return false;
     }
   }
@@ -179,6 +276,9 @@ export class MinimalDAOService {
     createdAt: number;
     memberCount: number;
     proposalCount: number;
+    votingDelay: number;
+    votingPeriod: number;
+    quorumPercentage: number;
   }> {
     try {
       const dao = this.getDAOContract(daoAddress);
@@ -193,10 +293,63 @@ export class MinimalDAOService {
         creator: config.creator,
         createdAt: Number(config.createdAt),
         memberCount: Number(memberCount),
-        proposalCount: Number(proposalCount)
+        proposalCount: Number(proposalCount),
+        votingDelay: Number(config.votingDelay),
+        votingPeriod: Number(config.votingPeriod),
+        quorumPercentage: Number(config.quorumPercentage)
       };
     } catch (error) {
-      console.error('Failed to get DAO info:', error);
+      console.error('❌ Failed to get DAO info:', error);
+      throw error;
+    }
+  }
+
+  async getMemberInfo(daoAddress: string, account: string): Promise<{
+    isActive: boolean;
+    joinedAt: number;
+    votingPower: number;
+  }> {
+    try {
+      const dao = this.getDAOContract(daoAddress);
+      const memberInfo = await dao.getMemberInfo(account);
+      
+      return {
+        isActive: memberInfo.isActive,
+        joinedAt: Number(memberInfo.joinedAt),
+        votingPower: Number(memberInfo.votingPower)
+      };
+    } catch (error) {
+      console.error('❌ Failed to get member info:', error);
+      return {
+        isActive: false,
+        joinedAt: 0,
+        votingPower: 0
+      };
+    }
+  }
+
+  async addMember(daoAddress: string, memberAddress: string): Promise<string> {
+    try {
+      const dao = this.getDAOContract(daoAddress);
+      const tx = await dao.addMember(memberAddress);
+      const receipt = await tx.wait();
+      console.log('✅ Member added successfully:', receipt.hash);
+      return receipt.hash;
+    } catch (error) {
+      console.error('❌ Failed to add member:', error);
+      throw error;
+    }
+  }
+
+  async removeMember(daoAddress: string, memberAddress: string): Promise<string> {
+    try {
+      const dao = this.getDAOContract(daoAddress);
+      const tx = await dao.removeMember(memberAddress);
+      const receipt = await tx.wait();
+      console.log('✅ Member removed successfully:', receipt.hash);
+      return receipt.hash;
+    } catch (error) {
+      console.error('❌ Failed to remove member:', error);
       throw error;
     }
   }
