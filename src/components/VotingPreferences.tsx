@@ -12,6 +12,8 @@ import { Separator } from '@/components/ui/separator';
 import { Bot, Plus, Trash2, Settings, CheckCircle, AlertCircle, Target, History } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { VotingPreference, AIVotingConfig } from '@/types/proposals';
+import { useAIVoting } from '@/hooks/useAIVoting';
+import { useSettings } from '@/hooks/useSettings';
 
 export const VotingPreferences: React.FC = () => {
   const [autoVotingEnabled, setAutoVotingEnabled] = useState(false);
@@ -27,37 +29,24 @@ export const VotingPreferences: React.FC = () => {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
   const { toast } = useToast();
+  const { config, updateConfig } = useAIVoting();
+  const { settings } = useSettings();
 
-  // Load saved preferences on component mount
+  // Load configuration from useAIVoting hook
   useEffect(() => {
-    const loadSavedPreferences = () => {
-      try {
-        const saved = localStorage.getItem('votingPreferences');
-        if (saved) {
-          const config: AIVotingConfig = JSON.parse(saved);
-          setAutoVotingEnabled(config.autoVotingEnabled);
-          setDaisyAutomation(config.daisyAutomation);
-          setConfidenceThreshold([config.minConfidenceThreshold]);
-          setVotingDelay([config.votingDelay]);
-          setPreferences(config.preferences);
-          
-          const savedTime = localStorage.getItem('votingPreferences_lastSaved');
-          if (savedTime) {
-            setLastSaved(new Date(savedTime));
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load voting preferences:', error);
-        toast({
-          title: "Load Error",
-          description: "Failed to load saved preferences. Using defaults.",
-          variant: "destructive",
-        });
-      }
-    };
+    if (config) {
+      setAutoVotingEnabled(config.autoVotingEnabled);
+      setDaisyAutomation(config.daisyAutomation);
+      setConfidenceThreshold([config.confidenceThreshold]);
+      setVotingDelay([config.votingDelay]);
+      setPreferences(config.preferences || []);
+    }
+  }, [config]);
 
-    loadSavedPreferences();
-  }, [toast]);
+  // Sync with global settings
+  useEffect(() => {
+    setAutoVotingEnabled(settings.ai.autoVoting);
+  }, [settings.ai.autoVoting]);
 
   const handlePreferenceChange = (index: number, field: keyof VotingPreference, value: any) => {
     setPreferences(prev => prev.map((pref, i) => 
@@ -112,34 +101,27 @@ export const VotingPreferences: React.FC = () => {
     return true;
   };
 
-  const savePreferences = () => {
+  const savePreferences = async () => {
     if (!validatePreferences()) {
       return;
     }
 
     try {
-      const config: AIVotingConfig = {
+      const newConfig: AIVotingConfig = {
         autoVotingEnabled,
         daisyAutomation,
-        minConfidenceThreshold: confidenceThreshold[0],
+        confidenceThreshold: confidenceThreshold[0],
         votingDelay: votingDelay[0],
         preferences: preferences.filter(p => p.category.trim())
       };
 
-      localStorage.setItem('votingPreferences', JSON.stringify(config));
+      // Use the unified updateConfig from useAIVoting
+      await updateConfig(newConfig);
+      
       const saveTime = new Date();
       localStorage.setItem('votingPreferences_lastSaved', saveTime.toISOString());
       setLastSaved(saveTime);
 
-      toast({
-        title: "Daisy Configuration Saved",
-        description: autoVotingEnabled 
-          ? "Daisy will now automatically vote based on your preferences and history."
-          : "Configuration saved. Enable automated voting to activate Daisy.",
-      });
-
-      // Trigger a custom event to notify other components
-      window.dispatchEvent(new CustomEvent('voting-preferences-updated', { detail: config }));
     } catch (error) {
       console.error('Failed to save preferences:', error);
       toast({
