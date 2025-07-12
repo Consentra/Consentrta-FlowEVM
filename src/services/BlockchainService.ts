@@ -50,7 +50,7 @@ export class BlockchainService {
       // Initialize all services including the new AI Oracle service
       await proposalRegistryService.connect(this.provider);
       await minimalGovernorService.connect(this.provider);
-      await soulboundIdentityService.connect(this.provider);
+      await soulboundIdentityService.connect(this.provider); // This line was already there
       await minimalDAOService.connect(this.provider);
       await daoLibService.connect(this.provider);
       await governanceLibService.connect(this.provider);
