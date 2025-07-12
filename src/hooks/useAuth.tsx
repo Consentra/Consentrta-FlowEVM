@@ -1,139 +1,183 @@
 
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { useToast } from '@/hooks/use-toast';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
-import { injected } from 'wagmi/connectors';
+import { useBlockchain } from '@/hooks/useBlockchain';
+
+interface UserProfile {
+  id: string;
+  email: string;
+  wallet_address?: string;
+  is_verified?: boolean;
+  verification_status?: 'pending' | 'in_progress' | 'verified' | 'rejected';
+  soulbound_nft_token_id?: number;
+  verification_completed_at?: string;
+  created_at: string;
+  updated_at: string;
+  display_name?: string;
+  bio?: string;
+  identity_nft_id?: number;
+  // Add computed properties that other components expect
+  address: string;
+  shortAddress: string;
+}
 
 interface AuthContextType {
-  user: { address: string; shortAddress: string } | null;
+  user: UserProfile | null;
   loading: boolean;
-  signIn: () => Promise<{ error: any }>;
-  signOut: () => Promise<{ error: any }>;
   isConnected: boolean;
+  signOut: () => Promise<void>;
+  signIn: () => Promise<{ error?: any }>;
+  connectWallet: () => Promise<boolean>;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<{ address: string; shortAddress: string } | null>(null);
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
-  
-  // Use wagmi hooks
-  const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
-  const { disconnect } = useDisconnect();
+  const { account, connectWallet: connectBlockchainWallet, isConnected } = useBlockchain();
 
-  // Handle wagmi account changes
   useEffect(() => {
-    if (address && isConnected) {
-      handleConnection(address);
-    } else {
-      setUser(null);
-    }
-    setLoading(false);
-  }, [address, isConnected]);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        fetchUserProfile(session.user);
+      } else {
+        setLoading(false);
+      }
+    });
 
-  const handleConnection = async (walletAddress: string) => {
-    await createWalletUserIfNeeded(walletAddress);
-    const userObj = {
-      address: walletAddress,
-      shortAddress: `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-    };
-    setUser(userObj);
-    
-    // Redirect to dashboard after successful connection
-    if (window.location.pathname === '/auth') {
-      window.location.href = '/dashboard';
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        await fetchUserProfile(session.user);
+      } else {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Update user profile when wallet is connected
+  useEffect(() => {
+    if (user && account && user.wallet_address !== account) {
+      updateProfile({ wallet_address: account });
     }
+  }, [account, user]);
+
+  const createUserProfile = (profileData: any, walletAddress?: string): UserProfile => {
+    const address = walletAddress || profileData.wallet_address || profileData.id;
+    return {
+      ...profileData,
+      address,
+      shortAddress: address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Unknown'
+    };
   };
 
-  const createWalletUserIfNeeded = async (walletAddress: string) => {
+  const fetchUserProfile = async (authUser: User) => {
     try {
-      console.log('Creating/checking user for wallet:', walletAddress);
-      
-      // Check if profile already exists using wallet_address as ID
-      const { data: existingProfile, error: fetchError } = await supabase
+      const { data: profile, error } = await supabase
         .from('profiles')
-        .select('id')
-        .eq('id', walletAddress)
-        .maybeSingle();
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
 
-      if (fetchError) {
-        console.error('Error checking existing profile:', fetchError);
-        return;
-      }
-
-      if (!existingProfile) {
-        console.log('Creating new profile for wallet:', walletAddress);
-        // Create profile with wallet address as ID
-        const { error: insertError } = await supabase
+      if (error) {
+        console.error('Error fetching profile:', error);
+        // Create profile if it doesn't exist
+        const { data: newProfile, error: createError } = await supabase
           .from('profiles')
           .insert({
-            id: walletAddress,
-            wallet_address: walletAddress,
-            display_name: `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`,
-            email: null,
-            verification_status: 'pending' as const,
-            is_verified: false
-          });
-        
-        if (insertError) {
-          console.error('Error creating wallet user:', insertError);
+            id: authUser.id,
+            email: authUser.email || '',
+            wallet_address: account || null
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error('Error creating profile:', createError);
         } else {
-          console.log('Successfully created profile for wallet:', walletAddress);
+          setUser(createUserProfile(newProfile, account));
         }
       } else {
-        console.log('Profile already exists for wallet:', walletAddress);
+        setUser(createUserProfile(profile));
       }
     } catch (error) {
-      console.error('Error in createWalletUserIfNeeded:', error);
+      console.error('Error in fetchUserProfile:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-
-  const signIn = async () => {
+  const signIn = async (): Promise<{ error?: any }> => {
     try {
-      connect({ connector: injected() });
-      return { error: null };
-    } catch (error: any) {
-      console.error('Connection error:', error);
-      toast({
-        title: "Connection Failed",
-        description: error.message || "Failed to connect wallet",
-        variant: "destructive",
-      });
+      const connected = await connectWallet();
+      if (connected) {
+        return { error: null };
+      } else {
+        return { error: 'Failed to connect wallet' };
+      }
+    } catch (error) {
+      console.error('Sign in error:', error);
       return { error };
     }
   };
 
-  const signOut = async () => {
-    disconnect();
-    setUser(null);
-    
-    toast({
-      title: "Wallet Disconnected",
-      description: "Your wallet has been disconnected",
-    });
-    
-    // Redirect to auth page after sign out
-    window.location.href = '/auth';
-    
-    return { error: null };
+  const connectWallet = async (): Promise<boolean> => {
+    try {
+      const connected = await connectBlockchainWallet();
+      if (connected && account && user) {
+        await updateProfile({ wallet_address: account });
+      }
+      return connected;
+    } catch (error) {
+      console.error('Failed to connect wallet:', error);
+      return false;
+    }
   };
 
-    return (
-      <AuthContext.Provider value={{
-        user,
-        loading,
-        signIn,
-        signOut,
-        isConnected,
-      }}>
-        {children}
-      </AuthContext.Provider>
-    );
+  const updateProfile = async (updates: Partial<Omit<UserProfile, 'address' | 'shortAddress'>>) => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating profile:', error);
+      } else {
+        setUser(createUserProfile(data));
+      }
+    } catch (error) {
+      console.error('Error in updateProfile:', error);
+    }
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  const value = {
+    user,
+    loading,
+    isConnected: isConnected && !!user,
+    signOut,
+    signIn,
+    connectWallet,
+    updateProfile
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {
