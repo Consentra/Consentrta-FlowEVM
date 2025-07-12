@@ -1,6 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { blockchainService } from '@/services/BlockchainService';
+import { soulboundIdentityService } from '@/services/SoulboundIdentityService';
+import { ethers } from 'ethers';
 
 export interface VerificationSubmission {
   fullName: string;
@@ -15,7 +16,7 @@ export interface VerificationRecord {
   user_id: string;
   full_name: string;
   email: string;
-  document_type: string;
+  document_type: 'passport' | 'drivers_license' | 'national_id';
   document_url?: string;
   selfie_url?: string;
   verification_hash?: string;
@@ -28,197 +29,168 @@ export interface VerificationRecord {
   updated_at: string;
 }
 
-class IdentityVerificationService {
-  async submitVerification(data: VerificationSubmission): Promise<{ success: boolean; error?: string }> {
+export class IdentityVerificationService {
+  async submitVerification(
+    userId: string,
+    walletAddress: string,
+    data: VerificationSubmission
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      // Get current user from wallet connection
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-      if (!accounts || accounts.length === 0) {
-        throw new Error('Wallet not connected');
-      }
-      
-      const userAddress = accounts[0];
+      console.log('Starting identity verification submission:', { userId, walletAddress });
 
-      // Upload documents to Supabase storage
-      const documentUrl = await this.uploadDocument(data.documentFile, userAddress, 'document');
-      const selfieUrl = await this.uploadDocument(data.selfieFile, userAddress, 'selfie');
+      // Upload documents to storage
+      const documentUrl = await this.uploadDocument(userId, 'document', data.documentFile);
+      const selfieUrl = await this.uploadDocument(userId, 'selfie', data.selfieFile);
 
-      // Generate verification hash
-      const verificationHash = await this.generateVerificationHash(data);
+      // Create verification hash for blockchain
+      const verificationData = `${data.fullName}:${data.email}:${data.documentType}:${Date.now()}`;
+      const verificationHash = ethers.keccak256(ethers.toUtf8Bytes(verificationData));
 
-      // Create verification record with wallet address as user_id
-      const { error } = await supabase
+      console.log('Documents uploaded, creating verification record...');
+
+      // Create verification record
+      const { data: verificationRecord, error } = await supabase
         .from('identity_verifications')
         .insert({
-          user_id: userAddress,
+          user_id: userId,
           full_name: data.fullName,
           email: data.email,
           document_type: data.documentType,
           document_url: documentUrl,
           selfie_url: selfieUrl,
           verification_hash: verificationHash,
-          status: 'pending'
-        });
+          status: 'in_progress'
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Failed to create verification record:', error);
+        return { success: false, error: 'Failed to create verification record' };
+      }
 
-      // Simulate verification process
-      setTimeout(() => {
-        this.processVerification(userAddress, verificationHash);
-      }, 3000);
+      console.log('Verification record created, attempting NFT mint...');
 
-      return { success: true };
-    } catch (error) {
-      console.error('Verification submission failed:', error);
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  }
+      // Now attempt to mint the Soulbound NFT
+      try {
+        // Connect to blockchain service
+        if (typeof window.ethereum !== 'undefined') {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          await soulboundIdentityService.connect(provider);
 
-  async getVerificationStatus(userId: string): Promise<VerificationRecord | null> {
-    try {
-      const { data, error } = await supabase
-        .from('identity_verifications')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+          // Create metadata URI (in production, this would be IPFS)
+          const metadata = {
+            name: `Identity Verification #${verificationRecord.id}`,
+            description: 'Soulbound Identity NFT for DAO participation',
+            attributes: [
+              { trait_type: 'Verification Status', value: 'Verified' },
+              { trait_type: 'Document Type', value: data.documentType },
+              { trait_type: 'Verification Date', value: new Date().toISOString() }
+            ]
+          };
+          const metadataURI = `data:application/json;base64,${btoa(JSON.stringify(metadata))}`;
 
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      console.error('Failed to get verification status:', error);
-      return null;
-    }
-  }
+          console.log('Minting Soulbound NFT...');
 
-  private async uploadDocument(file: File, userId: string, type: 'document' | 'selfie'): Promise<string> {
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${userId}/${type}_${Date.now()}.${fileExt}`;
-      
-      const { data, error } = await supabase.storage
-        .from('identity-documents')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
+          // Mint the NFT
+          const mintResult = await soulboundIdentityService.mintIdentity(
+            walletAddress,
+            verificationHash,
+            metadataURI
+          );
 
-      if (error) throw error;
+          console.log('NFT minted successfully:', mintResult);
 
-      // Get the public URL for the uploaded file
-      const { data: urlData } = supabase.storage
-        .from('identity-documents')
-        .getPublicUrl(fileName);
+          // Update verification record with NFT details
+          const { error: updateError } = await supabase
+            .from('identity_verifications')
+            .update({
+              status: 'verified',
+              verified_at: new Date().toISOString(),
+              nft_token_id: parseInt(mintResult.tokenId),
+              nft_transaction_hash: mintResult.txHash
+            })
+            .eq('id', verificationRecord.id);
 
-      return urlData.publicUrl;
-    } catch (error) {
-      console.error('Document upload failed:', error);
-      throw error;
-    }
-  }
+          if (updateError) {
+            console.error('Failed to update verification record with NFT details:', updateError);
+            // NFT was minted but record update failed - this is recoverable
+          }
 
-  private async generateVerificationHash(data: VerificationSubmission): Promise<string> {
-    const combinedData = `${data.fullName}${data.email}${data.documentType}${Date.now()}`;
-    const encoder = new TextEncoder();
-    const dataBuffer = encoder.encode(combinedData);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  private async processVerification(userId: string, verificationHash: string): Promise<void> {
-    try {
-      // Update status to in_progress
-      await supabase
-        .from('identity_verifications')
-        .update({ status: 'in_progress' })
-        .eq('user_id', userId)
-        .eq('verification_hash', verificationHash);
-
-      // Simulate AI verification process
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const isVerified = Math.random() > 0.1; // 90% success rate for demo
-
-      if (isVerified) {
-        // Mint Soulbound NFT
-        const nftResult = await this.mintSoulboundNFT(userId, verificationHash);
+          return { success: true };
+        } else {
+          console.error('MetaMask not available');
+          return { success: false, error: 'MetaMask not available for NFT minting' };
+        }
+      } catch (nftError) {
+        console.error('NFT minting failed:', nftError);
         
-        // Update verification status
-        await supabase
-          .from('identity_verifications')
-          .update({
-            status: 'verified',
-            verified_at: new Date().toISOString(),
-            nft_token_id: nftResult.tokenId,
-            nft_transaction_hash: nftResult.transactionHash
-          })
-          .eq('user_id', userId)
-          .eq('verification_hash', verificationHash);
-
-        // Update profile verification status
-        await supabase
-          .from('profiles')
-          .update({
-            verification_status: 'verified',
-            is_verified: true,
-            soulbound_nft_token_id: nftResult.tokenId,
-            verification_completed_at: new Date().toISOString()
-          })
-          .eq('id', userId);
-      } else {
-        // Reject verification
+        // Update status to show NFT minting failed
         await supabase
           .from('identity_verifications')
           .update({
             status: 'rejected',
-            rejection_reason: 'Document verification failed. Please ensure documents are clear and valid.'
+            rejection_reason: `NFT minting failed: ${nftError.message}`
           })
-          .eq('user_id', userId)
-          .eq('verification_hash', verificationHash);
+          .eq('id', verificationRecord.id);
+
+        return { success: false, error: `NFT minting failed: ${nftError.message}` };
       }
     } catch (error) {
-      console.error('Verification processing failed:', error);
-      await supabase
-        .from('identity_verifications')
-        .update({
-          status: 'rejected',
-          rejection_reason: 'Technical error during verification process.'
-        })
-        .eq('user_id', userId)
-        .eq('verification_hash', verificationHash);
+      console.error('Verification submission failed:', error);
+      return { success: false, error: error.message };
     }
   }
 
-  private async mintSoulboundNFT(userAddress: string, verificationHash: string): Promise<{ tokenId: number; transactionHash: string }> {
-    try {
-      // Generate metadata for the NFT
-      const metadata = {
-        name: 'Consentra Identity Verification',
-        description: 'Soulbound NFT proving verified identity for DAO participation',
-        image: 'https://via.placeholder.com/300x300?text=Verified+Identity',
-        attributes: [
-          { trait_type: 'Verification Level', value: 'KYC Verified' },
-          { trait_type: 'Issue Date', value: new Date().toISOString().split('T')[0] },
-          { trait_type: 'Issuer', value: 'Consentra Platform' }
-        ]
-      };
+  private async uploadDocument(userId: string, type: string, file: File): Promise<string> {
+    const fileName = `${userId}/${type}_${Date.now()}_${file.name}`;
+    
+    const { error } = await supabase.storage
+      .from('verification-documents')
+      .upload(fileName, file);
 
-      // Upload metadata to IPFS (simulated with a mock URI)
-      const metadataURI = `https://ipfs.example.com/${verificationHash}`;
-
-      // Mock NFT minting (since we're using ProposalRegistry contract now)
-      const transactionHash = '0x' + Math.random().toString(16).substr(2, 64);
-      const tokenId = Math.floor(Math.random() * 1000000) + 1;
-
-      console.log('Mock Soulbound NFT minted:', { tokenId, transactionHash, userAddress });
-
-      return { tokenId, transactionHash };
-    } catch (error) {
-      console.error('NFT minting failed:', error);
-      throw error;
+    if (error) {
+      throw new Error(`Failed to upload ${type}: ${error.message}`);
     }
+
+    const { data } = supabase.storage
+      .from('verification-documents')
+      .getPublicUrl(fileName);
+
+    return data.publicUrl;
+  }
+
+  async getVerificationRecord(userId: string): Promise<VerificationRecord | null> {
+    const { data, error } = await supabase
+      .from('identity_verifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      console.error('Failed to get verification record:', error);
+      return null;
+    }
+
+    return data;
+  }
+
+  async checkVerificationStatus(userId: string): Promise<{
+    isVerified: boolean;
+    isPending: boolean;
+    isRejected: boolean;
+    record: VerificationRecord | null;
+  }> {
+    const record = await this.getVerificationRecord(userId);
+    
+    return {
+      isVerified: record?.status === 'verified',
+      isPending: ['pending', 'in_progress'].includes(record?.status || ''),
+      isRejected: record?.status === 'rejected',
+      record
+    };
   }
 }
 
