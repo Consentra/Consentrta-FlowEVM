@@ -1,3 +1,4 @@
+
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESSES } from '@/utils/contractAddresses';
 import { SOULBOUND_IDENTITY_NFT_ABI } from '@/utils/contractABIs';
@@ -23,58 +24,32 @@ export class SoulboundIdentityService {
       SOULBOUND_IDENTITY_NFT_ABI,
       this.signer
     );
+    
+    console.log('🔰 SoulboundIdentity Service connected to:', CONTRACT_ADDRESSES.SOULBOUND_IDENTITY_NFT);
   }
 
-  async mintIdentity(
-    to: string,
-    verificationHash: string,
-    metadataURI: string
-  ): Promise<{ tokenId: string; txHash: string }> {
+  async isVerified(address: string): Promise<boolean> {
     if (!this.contract) {
       throw new Error('Contract not connected');
     }
 
     try {
-      const tx = await this.contract.mintIdentity(to, verificationHash, metadataURI);
-      const receipt = await tx.wait();
-      
-      // Extract token ID from the IdentityMinted event
-      const identityMintedEvent = receipt.logs.find(
-        (log: any) => log.eventName === 'IdentityMinted'
-      );
-      
-      const tokenId = identityMintedEvent?.args?.tokenId?.toString() || '0';
-      
-      return {
-        tokenId,
-        txHash: tx.hash
-      };
+      const verified = await this.contract.isVerified(address);
+      console.log(`🔍 Verification status for ${address}:`, verified);
+      return verified;
     } catch (error) {
-      console.error('Failed to mint identity:', error);
-      throw new Error(`Identity minting failed: ${error.message}`);
-    }
-  }
-
-  async isVerified(wallet: string): Promise<boolean> {
-    if (!this.contract) {
-      throw new Error('Contract not connected');
-    }
-
-    try {
-      return await this.contract.isVerified(wallet);
-    } catch (error) {
-      console.error('Failed to check verification status:', error);
+      console.error('Error checking verification status:', error);
       return false;
     }
   }
 
-  async getIdentity(wallet: string): Promise<Identity | null> {
+  async getIdentity(address: string): Promise<Identity | null> {
     if (!this.contract) {
       throw new Error('Contract not connected');
     }
 
     try {
-      const identity = await this.contract.getIdentity(wallet);
+      const identity = await this.contract.getIdentity(address);
       return {
         wallet: identity.wallet,
         verificationHash: identity.verificationHash,
@@ -83,65 +58,116 @@ export class SoulboundIdentityService {
         metadataURI: identity.metadataURI
       };
     } catch (error) {
-      console.error('Failed to get identity:', error);
+      console.error('Error getting identity:', error);
       return null;
     }
   }
 
-  async updateVerificationStatus(user: string, status: boolean): Promise<string> {
-    if (!this.contract) {
+  async requestVerification(metadataURI: string, reason: string): Promise<string> {
+    if (!this.contract || !this.signer) {
       throw new Error('Contract not connected');
     }
 
     try {
-      const tx = await this.contract.updateVerificationStatus(user, status);
-      await tx.wait();
-      return tx.hash;
-    } catch (error) {
-      console.error('Failed to update verification status:', error);
-      throw new Error(`Verification update failed: ${error.message}`);
+      const signerAddress = await this.signer.getAddress();
+      
+      // Create a verification hash based on the user's address and current timestamp
+      const verificationData = `${signerAddress}-${Date.now()}-${reason}`;
+      const verificationHash = ethers.keccak256(ethers.toUtf8Bytes(verificationData));
+
+      console.log('🔐 Requesting identity verification:', {
+        address: signerAddress,
+        verificationHash,
+        metadataURI
+      });
+
+      // Note: In a real implementation, this would typically require admin approval
+      // For demo purposes, we're assuming the user can self-verify
+      const tx = await this.contract.mintIdentity(
+        signerAddress,
+        verificationHash,
+        metadataURI
+      );
+
+      const receipt = await tx.wait();
+      console.log('✅ Identity NFT minted successfully:', receipt.hash);
+      
+      return receipt.hash;
+    } catch (error: any) {
+      console.error('❌ Failed to mint identity NFT:', error);
+      throw new Error(`Identity verification failed: ${error.message || 'Unknown error'}`);
     }
   }
 
-  async revokeIdentity(user: string): Promise<string> {
+  async mintIdentity(to: string, verificationHash: string, metadataURI: string): Promise<{ txHash: string; tokenId: string }> {
     if (!this.contract) {
       throw new Error('Contract not connected');
     }
 
     try {
-      const tx = await this.contract.revokeIdentity(user);
-      await tx.wait();
-      return tx.hash;
-    } catch (error) {
-      console.error('Failed to revoke identity:', error);
-      throw new Error(`Identity revocation failed: ${error.message}`);
+      console.log('🔐 Minting identity NFT:', {
+        to,
+        verificationHash,
+        metadataURI
+      });
+
+      const tx = await this.contract.mintIdentity(to, verificationHash, metadataURI);
+      const receipt = await tx.wait();
+      
+      // Extract token ID from events
+      const mintEvent = receipt.logs.find((log: any) => {
+        try {
+          const parsed = this.contract!.interface.parseLog(log);
+          return parsed?.name === 'IdentityMinted';
+        } catch {
+          return false;
+        }
+      });
+
+      let tokenId = '1'; // Default fallback
+      if (mintEvent) {
+        const parsed = this.contract.interface.parseLog(mintEvent);
+        tokenId = parsed?.args?.tokenId?.toString() || '1';
+      }
+
+      console.log('✅ Identity NFT minted successfully:', { txHash: receipt.hash, tokenId });
+      
+      return { txHash: receipt.hash, tokenId };
+    } catch (error: any) {
+      console.error('❌ Failed to mint identity NFT:', error);
+      throw new Error(`Identity minting failed: ${error.message || 'Unknown error'}`);
     }
   }
 
-  async getTokenId(wallet: string): Promise<string> {
+  async updateVerificationStatus(address: string, status: boolean): Promise<string> {
     if (!this.contract) {
       throw new Error('Contract not connected');
     }
 
     try {
-      const tokenId = await this.contract.walletToTokenId(wallet);
-      return tokenId.toString();
-    } catch (error) {
-      console.error('Failed to get token ID:', error);
-      return '0';
+      const tx = await this.contract.updateVerificationStatus(address, status);
+      const receipt = await tx.wait();
+      console.log(`✅ Verification status updated for ${address}: ${status}`);
+      return receipt.hash;
+    } catch (error: any) {
+      console.error('❌ Failed to update verification status:', error);
+      throw new Error(`Status update failed: ${error.message || 'Unknown error'}`);
     }
   }
 
-  async getTokenURI(tokenId: string): Promise<string> {
+  async revokeIdentity(address: string): Promise<string> {
     if (!this.contract) {
       throw new Error('Contract not connected');
     }
 
     try {
-      return await this.contract.tokenURI(tokenId);
-    } catch (error) {
-      console.error('Failed to get token URI:', error);
-      return '';
+      const tx = await this.contract.revokeIdentity(address);
+      const receipt = await tx.wait();
+      console.log(`✅ Identity revoked for ${address}`);
+      return receipt.hash;
+    } catch (error: any) {
+      console.error('❌ Failed to revoke identity:', error);
+      throw new Error(`Identity revocation failed: ${error.message || 'Unknown error'}`);
     }
   }
 }
