@@ -1,97 +1,156 @@
 
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/hooks/use-toast';
+import { useState, useCallback } from 'react';
+import { useBlockchain } from './useBlockchain';
+import { useToast } from './use-toast';
+import { useAuth } from './useAuth';
+import { soulboundIdentityService } from '@/services/SoulboundIdentityService';
 import { identityVerificationService, VerificationRecord, VerificationSubmission } from '@/services/IdentityVerificationService';
 
 export const useIdentityVerification = () => {
+  const [loading, setLoading] = useState(false);
+  const [isVerified, setIsVerified] = useState<boolean | null>(null);
   const [verificationRecord, setVerificationRecord] = useState<VerificationRecord | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [isPending, setIsPending] = useState(false);
+  const [isRejected, setIsRejected] = useState(false);
+  const { isConnected, isCorrectNetwork } = useBlockchain();
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const fetchVerificationStatus = async () => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
+  const checkVerificationStatus = async (address: string) => {
+    if (!isConnected || !isCorrectNetwork) return false;
+    
     try {
-      const record = await identityVerificationService.getVerificationStatus(user.address);
-      setVerificationRecord(record);
+      const verified = await soulboundIdentityService.isVerified(address);
+      setIsVerified(verified);
+      return verified;
     } catch (error) {
-      console.error('Failed to fetch verification status:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load verification status",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+      console.error('Error checking verification:', error);
+      return false;
     }
   };
 
-  const submitVerification = async (data: VerificationSubmission) => {
-    setSubmitting(true);
+  const refetch = useCallback(async () => {
+    if (!user) return;
     
     try {
-      const result = await identityVerificationService.submitVerification(data);
+      const status = await identityVerificationService.checkVerificationStatus(user.id);
+      setVerificationRecord(status.record);
+      setIsVerified(status.isVerified);
+      setIsPending(status.isPending);
+      setIsRejected(status.isRejected);
       
+      // Also check on-chain status if wallet is connected
+      if (user.wallet_address && isConnected && isCorrectNetwork) {
+        const onChainVerified = await soulboundIdentityService.isVerified(user.wallet_address);
+        setIsVerified(onChainVerified);
+      }
+    } catch (error) {
+      console.error('Error refetching verification status:', error);
+    }
+  }, [user, isConnected, isCorrectNetwork]);
+
+  const submitVerification = async (data: VerificationSubmission) => {
+    if (!user || !user.wallet_address) {
+      toast({
+        title: "Wallet Required",
+        description: "Please connect your wallet first",
+        variant: "destructive",
+      });
+      return { success: false };
+    }
+
+    setLoading(true);
+    try {
+      const result = await identityVerificationService.submitVerification(
+        user.id,
+        user.wallet_address,
+        data
+      );
+
       if (result.success) {
         toast({
           title: "Verification Submitted",
-          description: "Your documents have been submitted for review",
+          description: "Your identity verification has been submitted successfully",
         });
-        
-        // Refresh verification status
-        await fetchVerificationStatus();
-        return { success: true };
+        await refetch();
       } else {
         toast({
-          title: "Submission Failed",
+          title: "Verification Failed",
           description: result.error || "Failed to submit verification",
           variant: "destructive",
         });
-        return { success: false, error: result.error };
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+
+      return result;
+    } catch (error: any) {
+      console.error('Verification submission error:', error);
       toast({
-        title: "Submission Failed",
-        description: message,
+        title: "Verification Failed",
+        description: error.message || "Failed to submit verification",
         variant: "destructive",
       });
-      return { success: false, error: message };
+      return { success: false, error: error.message };
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
-  const isVerified = verificationRecord?.status === 'verified';
-  const isPending = verificationRecord?.status === 'pending' || verificationRecord?.status === 'in_progress';
-  const isRejected = verificationRecord?.status === 'rejected';
-
-  useEffect(() => {
-    fetchVerificationStatus();
-  }, [user]);
-
-  // Poll for status updates if verification is pending
-  useEffect(() => {
-    if (isPending) {
-      const interval = setInterval(fetchVerificationStatus, 5000);
-      return () => clearInterval(interval);
+  const mintIdentityNFT = async () => {
+    if (!isConnected || !isCorrectNetwork) {
+      toast({
+        title: "Wallet Required",
+        description: "Please connect your wallet to a supported network",
+        variant: "destructive",
+      });
+      return { success: false };
     }
-  }, [isPending]);
+
+    setLoading(true);
+    try {
+      toast({
+        title: "Minting Identity NFT",
+        description: "Please confirm the transaction in your wallet...",
+      });
+
+      const txHash = await soulboundIdentityService.requestVerification(
+        "Default verification", // metadata URI - in production this would be more comprehensive
+        "User verification request"
+      );
+
+      toast({
+        title: "Identity NFT Minted",
+        description: `Your identity has been verified on-chain (${txHash.slice(0, 10)}...)`,
+      });
+
+      // Refresh verification status
+      const address = await window.ethereum.request({ method: 'eth_accounts' });
+      if (address[0]) {
+        await checkVerificationStatus(address[0]);
+      }
+
+      return { success: true, txHash };
+    } catch (error: any) {
+      console.error('Identity verification error:', error);
+      toast({
+        title: "Verification Failed",
+        description: error.message || "Failed to mint identity NFT",
+        variant: "destructive",
+      });
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return {
-    verificationRecord,
-    loading,
-    submitting,
-    isVerified,
-    isPending,
-    isRejected,
+    mintIdentityNFT,
+    checkVerificationStatus,
     submitVerification,
-    refetch: fetchVerificationStatus
+    refetch,
+    loading,
+    isVerified,
+    verificationRecord,
+    isPending,
+    isRejected
   };
 };
