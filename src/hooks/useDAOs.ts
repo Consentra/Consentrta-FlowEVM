@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { useBlockchain } from '@/hooks/useBlockchain';
+
 import { useToast } from '@/hooks/use-toast';
 import { blockchainService } from '@/services/BlockchainService';
 import { minimalDAOService } from '@/services/MinimalDAOService';
@@ -38,7 +38,7 @@ export const useDAOs = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
-  const { isConnected, isCorrectNetwork } = useBlockchain();
+  
   const { toast } = useToast();
 
   const userDAOs = daos.filter(dao => 
@@ -107,11 +107,11 @@ export const useDAOs = () => {
       return { error };
     }
     
-    if (!isConnected || !isCorrectNetwork) {
-      const error = new Error('Wallet not connected to correct network');
+    if (!user.address) {
+      const error = new Error('Wallet not connected');
       toast({
         title: "Wallet Required",
-        description: "Please connect your wallet to Hyperion Testnet",
+        description: "Please connect your wallet to create DAOs",
         variant: "destructive",
       });
       return { error };
@@ -125,8 +125,7 @@ export const useDAOs = () => {
         description: "Please confirm the transaction in your wallet...",
       });
 
-      // Ensure blockchain service is connected
-      await blockchainService.connect();
+      // Blockchain service should already be connected via useAuth
 
       // Create the DAO on blockchain first - this will require wallet transaction
       const blockchainResult = await blockchainService.createDAO({
@@ -197,11 +196,11 @@ export const useDAOs = () => {
       return { error };
     }
 
-    if (!isConnected || !isCorrectNetwork) {
+    if (!user.address) {
       const error = new Error('Wallet not connected');
       toast({
         title: "Wallet Required",
-        description: "Please connect your wallet to Hyperion Testnet",
+        description: "Please connect your wallet to join DAOs",
         variant: "destructive",
       });
       return { error };
