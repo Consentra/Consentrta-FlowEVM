@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Shield, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useIdentityVerification } from '@/hooks/useIdentityVerification';
-import { useBlockchain } from '@/hooks/useBlockchain';
+import { useAuth } from '@/hooks/useAuth';
 import { VerificationSubmission } from '@/services/IdentityVerificationService';
 
 interface IdentityVerificationProps {
@@ -15,13 +15,13 @@ interface IdentityVerificationProps {
 
 export const IdentityVerification: React.FC<IdentityVerificationProps> = ({ onVerify, onSubmit }) => {
   const { mintIdentityNFT, checkVerificationStatus, loading, isVerified } = useIdentityVerification();
-  const { account, isConnected, isCorrectNetwork } = useBlockchain();
+  const { user, isConnected } = useAuth();
 
   useEffect(() => {
-    if (account && isConnected && isCorrectNetwork) {
-      checkVerificationStatus(account);
+    if (user?.address && isConnected) {
+      checkVerificationStatus(user.address);
     }
-  }, [account, isConnected, isCorrectNetwork]);
+  }, [user?.address, isConnected]);
 
   if (!isConnected) {
     return (
@@ -36,18 +36,6 @@ export const IdentityVerification: React.FC<IdentityVerificationProps> = ({ onVe
     );
   }
 
-  if (!isCorrectNetwork) {
-    return (
-      <Card className="border-yellow-200 bg-yellow-50">
-        <CardContent className="flex items-center justify-center p-6">
-          <div className="text-center">
-            <AlertCircle className="h-8 w-8 text-yellow-600 mx-auto mb-2" />
-            <p className="text-yellow-800">Switch to a supported network to verify your identity</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
 
   if (isVerified) {
     return (
