@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useBlockchain } from './useBlockchain';
+import { useAuth } from './useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { VotingPreference, AIVotingConfig, ProposalForVoting } from '@/types/proposals';
@@ -10,18 +10,18 @@ export const useAIVoting = () => {
   const [config, setConfig] = useState<AIVotingConfig | null>(null);
   const [activeVotingTasks, setActiveVotingTasks] = useState<Set<string>>(new Set());
   const [isConfigSynced, setIsConfigSynced] = useState(false);
-  const { isConnected, account } = useBlockchain();
+  const { isConnected, user } = useAuth();
   const { toast } = useToast();
   const { settings, updateSettings, saveSettings } = useSettings();
 
   // Load configuration from backend and localStorage
   useEffect(() => {
     const loadConfig = async () => {
-      if (account) {
+      if (user?.address) {
         try {
           // Try to load from backend first
           const response = await supabase.functions.invoke('daisy-config', {
-            body: { userAddress: account }
+            body: { userAddress: user.address }
           });
 
           if (response.data && !response.error) {
@@ -48,7 +48,7 @@ export const useAIVoting = () => {
     };
 
     loadConfig();
-  }, [account]);
+  }, [user?.address]);
 
   const updateConfig = useCallback(async (newConfig: AIVotingConfig) => {
     setConfig(newConfig);
@@ -59,12 +59,12 @@ export const useAIVoting = () => {
     updateSettings('ai', 'autoVoting', newConfig.autoVotingEnabled);
     
     // Save to backend if user is connected
-    if (account) {
+    if (user?.address) {
       try {
         const response = await supabase.functions.invoke('daisy-config', {
           body: { 
             ...newConfig, 
-            userAddress: account 
+            userAddress: user.address 
           }
         });
 
@@ -92,11 +92,11 @@ export const useAIVoting = () => {
     
     // Dispatch event for other components
     window.dispatchEvent(new CustomEvent('ai-voting-config-updated', { detail: newConfig }));
-  }, [account, toast, updateSettings, saveSettings]);
+  }, [user?.address, toast, updateSettings, saveSettings]);
 
   // Monitor for new proposals and process them with Daisy
   useEffect(() => {
-    if (!config?.autoVotingEnabled || !account) {
+    if (!config?.autoVotingEnabled || !user?.address) {
       return;
     }
 
@@ -140,10 +140,10 @@ export const useAIVoting = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [config?.autoVotingEnabled, account]);
+  }, [config?.autoVotingEnabled, user?.address]);
 
   const scheduleVote = useCallback(async (proposal: ProposalForVoting) => {
-    if (!config?.autoVotingEnabled || !isConnected || !account) {
+    if (!config?.autoVotingEnabled || !isConnected || !user?.address) {
       return;
     }
 
@@ -171,7 +171,7 @@ export const useAIVoting = () => {
         variant: "destructive",
       });
     }
-  }, [config, isConnected, account, activeVotingTasks, toast]);
+  }, [config, isConnected, user?.address, activeVotingTasks, toast]);
 
   const cancelScheduledVote = useCallback((proposalId: string) => {
     setActiveVotingTasks(prev => {
