@@ -1,13 +1,14 @@
 
 import { useState } from 'react';
-import { useBlockchain } from './useBlockchain';
+import { useAuth } from './useAuth';
 import { useToast } from './use-toast';
-import { blockchainService } from '@/services/BlockchainService';
+import { ethers } from 'ethers';
+import { MINIMAL_GOVERNOR_ABI } from '@/utils/contractABIs';
 import { supabase } from '@/integrations/supabase/client';
 
 export const useOnChainVoting = () => {
   const [loading, setLoading] = useState(false);
-  const { isConnected, isCorrectNetwork } = useBlockchain();
+  const { isConnected } = useAuth();
   const { toast } = useToast();
 
   const castOnChainVote = async (
@@ -16,10 +17,10 @@ export const useOnChainVoting = () => {
     vote: 'for' | 'against' | 'abstain',
     reason?: string
   ) => {
-    if (!isConnected || !isCorrectNetwork) {
+    if (!isConnected) {
       toast({
         title: "Wallet Required",
-        description: "Please connect your wallet to a supported network",
+        description: "Please connect your wallet to vote",
         variant: "destructive",
       });
       return { success: false };
@@ -38,16 +39,27 @@ export const useOnChainVoting = () => {
         throw new Error('DAO not found or not deployed');
       }
 
-      // Convert vote to support number
+      // Use MinimalGovernor service directly
+      const { minimalGovernorService } = await import('@/services/MinimalGovernorService');
+      
+      // Connect to blockchain  
+      if (typeof window.ethereum === 'undefined') {
+        throw new Error('MetaMask not found');
+      }
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await minimalGovernorService.connect(provider);
+      
+      // Convert vote to support number for Governor standard
       const support = vote === 'for' ? 1 : vote === 'against' ? 0 : 2;
 
-      // Submit vote on-chain
-      const txHash = await blockchainService.submitVote(
-        dao.governor_address,
+      // We'll use the MinimalGovernor service instead of direct contract interaction
+
+      // Submit vote on-chain using MinimalGovernor service
+      const txHash = await minimalGovernorService.castVoteWithReason(
         proposalId,
-        support as 0 | 1 | 2,
-        reason || `Vote: ${vote}`,
-        false // manual vote
+        support,
+        reason || `Vote: ${vote}`
       );
 
       // Update database to reflect on-chain vote
