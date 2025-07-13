@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { useBlockchain } from './useBlockchain';
+import { useAuth } from './useAuth';
 import { consenstraGovernanceTokenService } from '@/services/ConsentraGovernanceTokenService';
 import { useToast } from './use-toast';
 
@@ -15,22 +15,27 @@ interface TokenInfo {
 export const useGovernanceToken = () => {
   const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
   const [loading, setLoading] = useState(false);
-  const { provider, account, isConnected } = useBlockchain();
+  const { user, isConnected } = useAuth();
   const { toast } = useToast();
 
   const loadTokenInfo = async () => {
-    if (!provider || !account || !isConnected) return;
+    if (!user?.address || !isConnected) return;
 
     setLoading(true);
     try {
+      if (typeof window.ethereum === 'undefined') {
+        throw new Error('MetaMask not found');
+      }
+      
+      const provider = new (await import('ethers')).BrowserProvider(window.ethereum);
       await consenstraGovernanceTokenService.connect(provider);
       
       const [name, symbol, totalSupply, userBalance, votingPower] = await Promise.all([
         consenstraGovernanceTokenService.getTokenName(),
         consenstraGovernanceTokenService.getTokenSymbol(),
         consenstraGovernanceTokenService.getTotalSupply(),
-        consenstraGovernanceTokenService.getBalance(account),
-        consenstraGovernanceTokenService.getVotingPower(account)
+        consenstraGovernanceTokenService.getBalance(user.address),
+        consenstraGovernanceTokenService.getVotingPower(user.address)
       ]);
 
       setTokenInfo({
@@ -53,7 +58,7 @@ export const useGovernanceToken = () => {
   };
 
   const transfer = async (to: string, amount: string) => {
-    if (!provider) {
+    if (!user?.address || !isConnected) {
       toast({
         title: "Error",
         description: "Wallet not connected",
@@ -85,7 +90,7 @@ export const useGovernanceToken = () => {
   };
 
   const delegate = async (delegatee: string) => {
-    if (!provider) {
+    if (!user?.address || !isConnected) {
       toast({
         title: "Error",
         description: "Wallet not connected",
@@ -117,10 +122,10 @@ export const useGovernanceToken = () => {
   };
 
   useEffect(() => {
-    if (isConnected && provider && account) {
+    if (isConnected && user?.address) {
       loadTokenInfo();
     }
-  }, [isConnected, provider, account]);
+  }, [isConnected, user?.address]);
 
   return {
     tokenInfo,
