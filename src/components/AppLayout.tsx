@@ -4,9 +4,9 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AppSidebar } from '@/components/AppSidebar';
-import { BlockchainStatus } from '@/components/BlockchainStatus';
+
 import { useTheme } from '@/components/ThemeProvider';
-import { useBlockchain } from '@/hooks/useBlockchain';
+
 import { useAuth } from '@/hooks/useAuth';
 import { useIdentityVerification } from '@/hooks/useIdentityVerification';
 import { WalletAuth } from '@/components/WalletAuth';
@@ -22,7 +22,7 @@ import { Outlet, Navigate } from 'react-router-dom';
 
 export const AppLayout: React.FC = () => {
   const { theme, setTheme } = useTheme();
-  const { isConnected, isCorrectNetwork, currentNetwork } = useBlockchain();
+  
   const { user, signOut, loading } = useAuth();
   const { isVerified } = useIdentityVerification();
 
@@ -62,13 +62,12 @@ export const AppLayout: React.FC = () => {
   };
 
   const getNetworkStatus = () => {
-    if (!isConnected) return 'Not Connected';
-    if (!isCorrectNetwork) return 'Unsupported Network';
-    return currentNetwork?.chainName || 'Connected';
+    if (!user?.address) return 'Not Connected';
+    return 'Hyperion Testnet';
   };
 
   const getNetworkColor = () => {
-    if (!isConnected || !isCorrectNetwork) return 'bg-orange-500';
+    if (!user?.address) return 'bg-orange-500';
     return 'bg-green-500';
   };
 
@@ -104,12 +103,12 @@ export const AppLayout: React.FC = () => {
                       {getNetworkStatus()}
                     </span>
                   </div>
-                  {isConnected && user && !isVerified && (
+                  {user && !isVerified && (
                     <Badge variant="outline" className="status-pending text-xs">
                       Identity Verification Required
                     </Badge>
                   )}
-                  {isConnected && user && isVerified && (
+                  {user && isVerified && (
                     <Badge className="status-verified text-xs">
                       Verified Identity
                     </Badge>
@@ -152,10 +151,6 @@ export const AppLayout: React.FC = () => {
             </div>
           </header>
 
-          {/* Blockchain Status Banner */}
-          <div className="p-4 sm:p-6 pb-0">
-            <BlockchainStatus />
-          </div>
 
           {/* Main Content */}
           <div className="flex-1 p-4 sm:p-6 overflow-auto custom-scrollbar animate-fade-in">
