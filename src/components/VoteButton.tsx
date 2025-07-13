@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2, Vote, XCircle } from 'lucide-react';
 import { useOnChainVoting } from '@/hooks/useOnChainVoting';
-import { useBlockchain } from '@/hooks/useBlockchain';
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 
 interface VoteButtonProps {
@@ -28,7 +28,7 @@ export const VoteButton: React.FC<VoteButtonProps> = ({
   reason = ''
 }) => {
   const { castOnChainVote, loading } = useOnChainVoting();
-  const { isConnected, isCorrectNetwork } = useBlockchain();
+  const { isConnected } = useAuth();
   const { toast } = useToast();
 
   const handleVote = async () => {
@@ -36,23 +36,13 @@ export const VoteButton: React.FC<VoteButtonProps> = ({
       proposalId, 
       daoId, 
       vote,
-      isConnected,
-      isCorrectNetwork
+      isConnected
     });
     
     if (!isConnected) {
       toast({
         title: "Wallet Not Connected",
         description: "Please connect your wallet to vote on-chain",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!isCorrectNetwork) {
-      toast({
-        title: "Wrong Network",
-        description: "Please switch to a supported network (Flow EVM or Hyperion)",
         variant: "destructive",
       });
       return;
