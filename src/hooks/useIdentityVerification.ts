@@ -1,6 +1,6 @@
 
 import { useState, useCallback } from 'react';
-import { useBlockchain } from './useBlockchain';
+
 import { useToast } from './use-toast';
 import { useAuth } from './useAuth';
 import { soulboundIdentityService } from '@/services/SoulboundIdentityService';
@@ -12,12 +12,12 @@ export const useIdentityVerification = () => {
   const [verificationRecord, setVerificationRecord] = useState<VerificationRecord | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [isRejected, setIsRejected] = useState(false);
-  const { isConnected, isCorrectNetwork } = useBlockchain();
+  
   const { user } = useAuth();
   const { toast } = useToast();
 
   const checkVerificationStatus = async (address: string) => {
-    if (!isConnected || !isCorrectNetwork) return false;
+    if (!user?.address) return false;
     
     try {
       const verified = await soulboundIdentityService.isVerified(address);
@@ -40,14 +40,14 @@ export const useIdentityVerification = () => {
       setIsRejected(status.isRejected);
       
       // Also check on-chain status if wallet is connected
-      if (user.wallet_address && isConnected && isCorrectNetwork) {
+      if (user.wallet_address) {
         const onChainVerified = await soulboundIdentityService.isVerified(user.wallet_address);
         setIsVerified(onChainVerified);
       }
     } catch (error) {
       console.error('Error refetching verification status:', error);
     }
-  }, [user, isConnected, isCorrectNetwork]);
+  }, [user]);
 
   const submitVerification = async (data: VerificationSubmission) => {
     if (!user || !user.wallet_address) {
@@ -96,10 +96,10 @@ export const useIdentityVerification = () => {
   };
 
   const mintIdentityNFT = async () => {
-    if (!isConnected || !isCorrectNetwork) {
+    if (!user?.address) {
       toast({
         title: "Wallet Required",
-        description: "Please connect your wallet to a supported network",
+        description: "Please connect your wallet to mint identity NFT",
         variant: "destructive",
       });
       return { success: false };
