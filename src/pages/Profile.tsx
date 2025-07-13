@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { IdentityVerification } from '@/components/IdentityVerification';
-import { BlockchainStatus } from '@/components/BlockchainStatus';
+
 
 const Profile = () => {
   return (
@@ -14,7 +14,6 @@ const Profile = () => {
       </div>
       
       <div className="max-w-2xl mx-auto space-y-6">
-        <BlockchainStatus />
         <IdentityVerification />
       </div>
     </div>
