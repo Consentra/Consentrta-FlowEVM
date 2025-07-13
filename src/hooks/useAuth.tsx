@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { useBlockchain } from '@/hooks/useBlockchain';
+
 
 interface UserProfile {
   id: string;
@@ -37,7 +37,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const { account, connectWallet: connectBlockchainWallet, isConnected } = useBlockchain();
+  const [walletAccount, setWalletAccount] = useState<string | null>(null);
+  const [isWalletConnected, setIsWalletConnected] = useState(false);
 
   useEffect(() => {
     // Get initial session
@@ -62,12 +63,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
-  // Update user profile when wallet is connected
+  // Check for existing wallet connection on mount
   useEffect(() => {
-    if (user && account && user.wallet_address !== account) {
-      updateProfile({ wallet_address: account });
+    checkWalletConnection();
+  }, []);
+
+  // Create user when wallet is connected
+  useEffect(() => {
+    if (walletAccount && isWalletConnected && !user) {
+      createWalletUser();
+    } else if (user && walletAccount && user.wallet_address !== walletAccount) {
+      updateProfile({ wallet_address: walletAccount });
     }
-  }, [account, user]);
+  }, [walletAccount, user, isWalletConnected]);
+
+  // Initialize blockchain service when wallet connects
+  useEffect(() => {
+    if (isWalletConnected && walletAccount) {
+      initializeBlockchainService();
+    }
+  }, [isWalletConnected, walletAccount]);
+
+  const checkWalletConnection = async () => {
+    if (typeof window.ethereum !== 'undefined') {
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        if (accounts.length > 0) {
+          setWalletAccount(accounts[0]);
+          setIsWalletConnected(true);
+        } else {
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Error checking wallet connection:', error);
+        setLoading(false);
+      }
+    } else {
+      setLoading(false);
+    }
+  };
 
   const createUserProfile = (profileData: any, walletAddress?: string): UserProfile => {
     const address = walletAddress || profileData.wallet_address || profileData.id;
@@ -94,7 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .insert({
             id: authUser.id,
             email: authUser.email || '',
-            wallet_address: account || null
+            wallet_address: walletAccount || null
           })
           .select()
           .single();
@@ -102,7 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (createError) {
           console.error('Error creating profile:', createError);
         } else {
-          setUser(createUserProfile(newProfile, account));
+          setUser(createUserProfile(newProfile, walletAccount));
         }
       } else {
         setUser(createUserProfile(profile));
@@ -129,15 +163,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const connectWallet = async (): Promise<boolean> => {
+    if (typeof window.ethereum === 'undefined') {
+      console.error('MetaMask not found');
+      return false;
+    }
+
+    // Avoid duplicate requests
+    if (loading) {
+      return false;
+    }
+
+    setLoading(true);
     try {
-      const connected = await connectBlockchainWallet();
-      if (connected && account && user) {
-        await updateProfile({ wallet_address: account });
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      if (accounts.length > 0) {
+        setWalletAccount(accounts[0]);
+        setIsWalletConnected(true);
+        return true;
       }
-      return connected;
+      return false;
     } catch (error) {
       console.error('Failed to connect wallet:', error);
       return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createWalletUser = async () => {
+    if (!walletAccount) return;
+
+    // Create a basic user profile based on wallet address
+    const walletUser: UserProfile = {
+      id: walletAccount,
+      email: '',
+      wallet_address: walletAccount,
+      is_verified: false,
+      verification_status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      address: walletAccount,
+      shortAddress: `${walletAccount.slice(0, 6)}...${walletAccount.slice(-4)}`
+    };
+
+    setUser(walletUser);
+  };
+
+  const initializeBlockchainService = async () => {
+    try {
+      const { blockchainService } = await import('@/services/BlockchainService');
+      await blockchainService.connect();
+      console.log('✅ Blockchain service connected successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize blockchain service:', error);
     }
   };
 
@@ -170,7 +248,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value = {
     user,
     loading,
-    isConnected: isConnected && !!user,
+    isConnected: isWalletConnected && !!user,
     signOut,
     signIn,
     connectWallet,
