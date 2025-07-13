@@ -43,24 +43,33 @@ export class BlockchainService {
     }
 
     try {
+      // Don't request accounts again if already connected
       this.provider = new ethers.BrowserProvider(window.ethereum);
-      await this.provider.send('eth_requestAccounts', []);
-      this.signer = await this.provider.getSigner();
       
-      // Initialize all services including the new AI Oracle service
-      await proposalRegistryService.connect(this.provider);
-      await minimalGovernorService.connect(this.provider);
-      await soulboundIdentityService.connect(this.provider); // This line was already there
-      await minimalDAOService.connect(this.provider);
-      await daoLibService.connect(this.provider);
-      await governanceLibService.connect(this.provider);
+      // Check if we already have a signer
+      if (!this.signer) {
+        this.signer = await this.provider.getSigner();
+      }
+      
+      console.log('🔗 Connecting blockchain services...');
+      
+      // Initialize all services
+      await Promise.all([
+        proposalRegistryService.connect(this.provider),
+        minimalGovernorService.connect(this.provider),
+        soulboundIdentityService.connect(this.provider),
+        minimalDAOService.connect(this.provider),
+        daoLibService.connect(this.provider),
+        governanceLibService.connect(this.provider)
+      ]);
       
       // Initialize AI Oracle service
       this.aiOracleService = new AIOracleService(this.signer);
       
+      console.log('✅ All blockchain services connected successfully');
       return true;
     } catch (error) {
-      console.error('Failed to connect to blockchain:', error);
+      console.error('❌ Failed to connect to blockchain:', error);
       return false;
     }
   }
@@ -167,10 +176,9 @@ export class BlockchainService {
         return await this.submitAutomatedVote(governorAddress, proposalId, support, reason);
       }
 
-      // Use enhanced voting with verification - use the MinimalDAO contract
-      const txHash = await minimalDAOService.voteWithReason(
-        governorAddress,
-        parseInt(proposalId),
+      // Use the MinimalGovernor contract directly for voting
+      const txHash = await minimalGovernorService.castVoteWithReason(
+        proposalId,
         support,
         reason
       );
@@ -194,11 +202,8 @@ export class BlockchainService {
     console.log('Creating proposal on-chain:', { governorAddress, params });
 
     try {
-      // Create proposal using the MinimalDAO contract
-      const result = await minimalDAOService.createProposal(
-        governorAddress,
-        params.description
-      );
+      // Create proposal using the MinimalGovernor service
+      const result = await minimalGovernorService.propose(params.description);
 
       // Submit AI prediction and analysis to the AI Oracle
       if (this.aiOracleService) {
