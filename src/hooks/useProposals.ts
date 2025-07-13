@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { useBlockchain } from '@/hooks/useBlockchain';
+
 import { useToast } from '@/hooks/use-toast';
 import { blockchainService } from '@/services/BlockchainService';
 import { Proposal, Vote } from '@/types/proposals';
@@ -12,7 +12,7 @@ export const useProposals = (daoId?: string) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user, isConnected } = useAuth();
-  const { isCorrectNetwork } = useBlockchain();
+  
   const { toast } = useToast();
 
   const fetchProposals = async () => {
@@ -115,8 +115,8 @@ export const useProposals = (daoId?: string) => {
       return { error };
     }
 
-    if (!isConnected || !isCorrectNetwork) {
-      const error = new Error('Wallet not connected to correct network');
+    if (!isConnected) {
+      const error = new Error('Wallet not connected');
       toast({
         title: "Wallet Required",
         description: "Please connect your wallet to create proposals on-chain",
