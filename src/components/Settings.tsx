@@ -22,7 +22,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { WalletConnection } from '@/components/WalletConnection';
+
 import { useSettings } from '@/hooks/useSettings';
 import { useAuth } from '@/hooks/useAuth';
 import { useAIVoting } from '@/hooks/useAIVoting';
@@ -147,7 +147,11 @@ export const Settings: React.FC = () => {
                     {user ? `Connected: ${user.shortAddress}` : 'No wallet connected'}
                   </p>
                 </div>
-                <WalletConnection onConnect={() => {}} />
+                {!user && (
+                  <Button onClick={() => window.location.href = '/auth'}>
+                    Connect Wallet
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
