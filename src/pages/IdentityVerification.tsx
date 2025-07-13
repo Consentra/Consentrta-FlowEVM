@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { useBlockchain } from '@/hooks/useBlockchain';
+
 import { useIdentityVerification } from '@/hooks/useIdentityVerification';
 import { IdentityVerification } from '@/components/IdentityVerification';
 import { VerificationStatus } from '@/components/VerificationStatus';
@@ -11,7 +11,7 @@ import { Wallet, Shield } from 'lucide-react';
 
 const IdentityVerificationPage = () => {
   const { user, connectWallet } = useAuth();
-  const { isConnected, account } = useBlockchain();
+  
   const {
     verificationRecord,
     loading,
@@ -37,7 +37,7 @@ const IdentityVerificationPage = () => {
   const handleConnectWallet = async () => {
     const connected = await connectWallet();
     if (connected) {
-      console.log('Wallet connected successfully:', account);
+      console.log('Wallet connected successfully:', user?.address);
     }
   };
 
@@ -56,7 +56,7 @@ const IdentityVerificationPage = () => {
     );
   }
 
-  if (!isConnected || !user.wallet_address) {
+  if (!user.wallet_address) {
     return (
       <div className="max-w-4xl mx-auto">
         <Card className="glass-card">
@@ -89,7 +89,7 @@ const IdentityVerificationPage = () => {
           <div className="flex items-center justify-center space-x-2 text-sm">
             <Shield className="w-4 h-4 text-green-600" />
             <span className="text-green-700 dark:text-green-300">
-              Wallet Connected: {account?.slice(0, 6)}...{account?.slice(-4)}
+              Wallet Connected: {user?.shortAddress}
             </span>
           </div>
         </div>
